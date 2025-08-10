@@ -133,3 +133,39 @@ python -m src.tasks.score_gnn_productivity \
   --out data/processed/gnn_productivity.parquet \
   --fanout 15,15 --batch_nodes 65536 --device cpu
 ```
+
+# Attaching the pipelines
+
+```bash
+python -m src.tasks.reweight_rankings \
+  --rankings_in data/processed/rankings.parquet \
+  --prior_parquet data/processed/graph_metrics.parquet \
+  --prior_score_col prod_katz_a0.2_b0.2_g0.5 \
+  --out data/processed/rankings_reweighted.parquet \
+  --alpha 0.2 --mix linear --zscore_prior
+```
+
+```bash
+python -m src.tasks.explain_rankings \
+  --rankings data/processed/rankings_reweighted.parquet \
+  --nodes data/processed/nodes.parquet \
+  --contexts data/processed/contexts.jsonl \
+  --out data/processed/rankings_reweighted_explained.csv \
+  --format csv --topk 50 --limit 500
+```
+
+```bash
+python -m src.tasks.distill_gnn_to_text \
+  --type_features data/processed/type_features.npz \
+  --labels_parquet data/processed/graph_metrics.parquet \
+  --label_col prod_katz_a0.2_b0.2_g0.5 \
+  --out_ckpt outputs/text_prod.pt \
+  --epochs 3 --batch 8192 --lr 2e-3 --hidden 256 --device cpu
+```
+
+```
+python -m src.tasks.score_text_prod_on_text \
+  --ckpt outputs/text_prod.pt \
+  --type_string "∀ {X : TopCat} (x : ↑X) (U : TopologicalSpace.OpenNhds (↑(CategoryTheory.CategoryStruct.id X) x)), (TopologicalSpace.OpenNhds.map (CategoryTheory.CategoryStruct.id X) x).obj U = U" \
+  --buckets 128
+```
