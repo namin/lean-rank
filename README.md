@@ -84,4 +84,4 @@ python -m src.tasks.score_productivity \
 ## Notes
 - All builders are streaming and memory-light (8M+ line premises OK).
 - The ranker uses a **shared MLP encoder** for target and premise type features.
-- The productivity score calculates the model’s predicted adoption@K for the new statement:  if we treated every current target as a proxy for future ones, your statement would land in the Top-K suggestions.
+- The productivity score calculates the model’s predicted adoption@K for the new statement:  if we treated every current target as a proxy for future ones, your statement would land in the Top-K suggestions. `lift = adoption@K / (K/N)`, where `N` is the total candidate premises.
