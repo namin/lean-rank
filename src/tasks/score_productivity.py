@@ -1,7 +1,34 @@
-import argparse, json, numpy as np, pandas as pd, torch
+import argparse, json, re
+import numpy as np
+import pandas as pd
+import torch
 from pathlib import Path
+
 from src.models.text_encoder import MLPEncoder
 from src.utils.type_features import featurize_type
+
+def _kth_or_last(scores, k: int) -> float:
+    """
+    Return the k-th (1-based) element from a sequence/array `scores`.
+    If k is beyond length, return the last element.
+    If empty or None, return +inf so comparisons (s >= tau) will be false.
+    Handles Python lists, tuples, numpy arrays, or pandas arrays.
+    """
+    if scores is None:
+        return float('inf')
+    # Coerce to 1D numpy array of floats
+    try:
+        arr = np.asarray(scores, dtype=np.float32).reshape(-1)
+    except Exception:
+        # Fallback for weird objects
+        try:
+            arr = np.array(list(scores), dtype=np.float32).reshape(-1)
+        except Exception:
+            return float('inf')
+    if arr.size == 0:
+        return float('inf')
+    idx = min(max(k-1, 0), arr.size - 1)
+    return float(arr[idx])
 
 def main():
     ap = argparse.ArgumentParser()
@@ -16,7 +43,13 @@ def main():
     ap.add_argument("--buckets", type=int, default=128)
     ap.add_argument("--k_list", type=str, default="10,20,50")
     ap.add_argument("--target_kinds", type=str, default="theorem,lemma",
-                    help="comma list to restrict targets (e.g. theorem,lemma). Empty = no filter.")
+                    help="comma list to restrict targets by kind (e.g. theorem,lemma). Empty = no filter.")
+    ap.add_argument("--target_prefixes", type=str, default="",
+                    help="comma-separated name prefixes (e.g. 'TopologicalSpace.,Filter.')")
+    ap.add_argument("--target_regex", type=str, default="",
+                    help="Python regex to match target names (e.g. '^(List|Finset)\\.')")
+    ap.add_argument("--regex_ignore_case", action="store_true",
+                    help="Use re.I for --target_regex")
     args = ap.parse_args()
 
     K_LIST = [int(x) for x in args.k_list.split(",")]
@@ -30,43 +63,67 @@ def main():
                      hidden=ckpt["config"]["hidden"])
     enc.load_state_dict(ckpt["state_dict"]); enc.eval()
 
-    # Targets = those in contexts.jsonl (order matters)
-    tgt_ids = [int(json.loads(l)["target_id"]) for l in open(args.contexts, "r")]
+    # Context targets (order matters)
+    all_tgt_ids = [int(json.loads(l)["target_id"]) for l in open(args.contexts, "r")]
 
-    # Optional: restrict targets by kind (theorem/lemma)
+    # Join kinds/names
+    nodes = pd.read_parquet(args.nodes)            # id,name
+    name_by_id = nodes.set_index("id")["name"].to_dict()
+    decl = pd.read_parquet(args.decltypes)         # name,kind,...
+    kind_by_name = decl.set_index("name")["kind"].to_dict()
+    kind_by_id = {i: kind_by_name.get(name_by_id.get(i, ""), None) for i in all_tgt_ids}
+
+    # Build filters
+    tgt_ids = list(all_tgt_ids)
+    # kind filter
     if args.target_kinds:
-        nodes = pd.read_parquet(args.nodes)            # id,name
-        decl = pd.read_parquet(args.decltypes)         # name,kind,...
-        kind_by_id = nodes.merge(decl[["name","kind"]], on="name", how="left") \
-                           .set_index("id")["kind"].to_dict()
         allowed = {k.strip() for k in args.target_kinds.split(",") if k.strip()}
         tgt_ids = [tid for tid in tgt_ids if kind_by_id.get(tid) in allowed]
+    # prefix filter
+    if args.target_prefixes.strip():
+        prefixes = tuple(p.strip() for p in args.target_prefixes.split(",") if p.strip())
+        tgt_ids = [tid for tid in tgt_ids if name_by_id.get(tid, "").startswith(prefixes)]
+    # regex filter
+    if args.target_regex.strip():
+        flags = re.I if args.regex_ignore_case else 0
+        pat = re.compile(args.target_regex, flags)
+        tgt_ids = [tid for tid in tgt_ids if pat.search(name_by_id.get(tid, ""))]
 
-    # Per-target top-K cutoffs from rankings.parquet (align to tgt_ids)
-    rk = pd.read_parquet(args.rankings).set_index("target_id").loc[tgt_ids]
-    taus = {K: rk["scores"].map(lambda s: s[K-1]).to_numpy(np.float32) for K in K_LIST}
+    # Align rankings rows with filtered tgt_ids (intersection in order)
+    rk = pd.read_parquet(args.rankings).set_index("target_id")
+    missing = [tid for tid in tgt_ids if tid not in rk.index]
+    if missing:
+        tgt_ids = [tid for tid in tgt_ids if tid in rk.index]
+    rk = rk.loc[tgt_ids]
+
+    # Per-target top-K cutoffs
+    taus = {K: rk["scores"].map(lambda s: _kth_or_last(s, K)).to_numpy(np.float32) for K in K_LIST}
 
     # Encode targets
     with torch.no_grad():
         G = enc(torch.from_numpy(X[tgt_ids])).cpu().numpy()  # (T, d)
 
-    # Encode the NEW statement
+    # Encode NEW statement
     base, tri, head = featurize_type(args.type_string, buckets=args.buckets)
     x_new = np.concatenate([base, tri, head]).astype(np.float32)
     with torch.no_grad():
         z = enc(torch.from_numpy(x_new).unsqueeze(0)).cpu().numpy()[0]  # (d,)
 
-    # Scores of new statement vs all targets
+    # Scores vs all filtered targets
     s = G @ z  # (T,)
 
-    # Report adoption@K and lift vs random (random ≈ K/N)
+    # Report adoption@K and lift vs random (random ≈ K/N, with full candidate pool N)
     T = len(tgt_ids)
+    print(f"[info] filtered targets: {T} / total contexts {len(all_tgt_ids)}")
+    if T == 0:
+        print("No targets after filtering.")
+        return
+
     for K in K_LIST:
         adopt_frac = float((s >= taus[K]).mean())
         random_frac = K / N
         lift = adopt_frac / random_frac if random_frac > 0 else float("nan")
-        print(f"adoption@{K}: {adopt_frac*100:.3f}%  "
-              f"(~{adopt_frac*T:.0f}/{T});  random={random_frac*100:.3f}%  lift={lift:.2f}")
+        print(f"adoption@{K}: {adopt_frac*100:.3f}%  (~{adopt_frac*T:.0f}/{T});  random={random_frac*100:.3f}%  lift={lift:.2f}")
 
 if __name__ == "__main__":
     main()
