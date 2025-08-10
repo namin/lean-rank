@@ -1,6 +1,6 @@
 # Lean Rank
 
-This is a **single-path**, text-only pipeline that learns to **rank useful premises**
+This is a single-path, text-only pipeline that learns to **rank useful premises**
 for a target declaration using just two inputs:
 
 We use two computed files using [`kim-em/lean-training-data`](https://github.com/kim-em/lean-training-data):
@@ -8,6 +8,7 @@ We use two computed files using [`kim-em/lean-training-data`](https://github.com
 - `declaration_types.txt` — from `lake exe declaration_types Mathlib` (names + types)
 
 The pipeline handles **cold-start**: if you know a new target’s type, it can suggest premises.
+If can also suggest a productivity score for a new target by calculating how it would be adopted by the current model.
 
 ## Quick start
 
@@ -65,7 +66,18 @@ python -m src.tasks.score_on_text \
   --topk 50 --buckets 128
 ```
 
+### 8) Score productivity
+```bash
+python -m src.tasks.score_productivity \
+  --type_string "∀ {X : TopCat} (x : ↑X) (U : TopologicalSpace.OpenNhds (↑(CategoryTheory.CategoryStruct.id X) x)), (TopologicalSpace.OpenNhds.map (CategoryTheory.CategoryStruct.id X) x).obj U = U" \
+  --features data/processed/type_features.npz \
+  --contexts data/processed/contexts.jsonl \
+  --rankings data/processed/rankings.parquet \
+  --ckpt outputs/text_ranker.pt \
+  --buckets 128 --k_list 10,20,50
+```
+
 ## Notes
 - All builders are streaming and memory-light (8M+ line premises OK).
 - The ranker uses a **shared MLP encoder** for target and premise type features.
-
+- The productivity score calculates the model’s predicted adoption@K for the new statement:  if we treated every current target as a proxy for future ones, your statement would land in the Top-K suggestions.
