@@ -1,6 +1,6 @@
 # Lean Rank
 
-This is a **single-path**, text-only pipeline that learns to **rank useful premises**
+This is a single-path, text-only pipeline that learns to **rank useful premises**
 for a target declaration using just two inputs:
 
 We use two computed files using [`kim-em/lean-training-data`](https://github.com/kim-em/lean-training-data):
