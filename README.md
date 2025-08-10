@@ -1,4 +1,4 @@
-# Lean Rank
+# `lean-rank`
 
 A pipeline that learns to **rank useful premises** for a target declaration using just two inputs, premises and declaration types.
 
