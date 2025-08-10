@@ -1,0 +1,6 @@
+# Optional: FAISS (only if you enable the FAISS-based scorer; not required by default).
+# macOS CPU:
+#   pip install faiss-cpu
+# Note: if you see 'KMP_DUPLICATE_LIB_OK' errors, set:
+#   export KMP_DUPLICATE_LIB_OK=TRUE
+faiss-cpu

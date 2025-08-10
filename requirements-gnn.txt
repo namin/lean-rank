@@ -1,0 +1,11 @@
+# Optional: GraphSAGE / PyTorch Geometric (device-specific wheels)
+# Recommended: install these separately from core requirements.
+# CPU-only example (Torch 2.2 CPU wheels):
+#   pip install torch==2.2.* torchvision==0.17.* torchaudio==2.2.* --index-url https://download.pytorch.org/whl/cpu
+#   pip install torch-geometric==2.5.3 torch-scatter torch-sparse torch-cluster #       --find-links https://data.pyg.org/whl/torch-2.2.0+cpu.html
+# MPS (Apple) example: install a matching Torch build first (e.g., 2.2.*), then:
+#   pip install torch-geometric==2.5.3
+torch-geometric==2.5.3
+torch-scatter
+torch-sparse
+torch-cluster

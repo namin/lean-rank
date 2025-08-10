@@ -1,5 +1,8 @@
+# Core requirements for lean-rank (text pipeline + analytics)
+# These are small, CPU-friendly, and work on macOS/Linux.
 torch>=2.1
-numpy
-pandas
-pyarrow
-tqdm
+numpy>=1.24
+pandas>=2.1
+pyarrow>=14
+tqdm>=4.66
+scipy>=1.10
