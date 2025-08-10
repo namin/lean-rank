@@ -192,6 +192,49 @@ def katz_mass_frontier(row_ptr: np.ndarray, col_idx: np.ndarray, seeds: np.ndarr
 
     return float(total_mass), y_total, per_hop
 
+def _write_markdown_report(out_path: Path,
+                           type_string: str,
+                           L: int, K: int, beta: float,
+                           total_mass: float,
+                           use_cost: int,
+                           alpha: float, gamma: float,
+                           prod_whatif: float,
+                           attach_names: List[str],
+                           attach_scores: List[float],
+                           per_hop: List[tuple],
+                           percentile: float | None,
+                           percentile_col: str | None):
+    lines = []
+    lines.append("# What-if Productivity Report")
+    lines.append("")
+    lines.append("**Type string**:")
+    lines.append("")
+    lines.append("```")
+    lines.append(type_string)
+    lines.append("```")
+    lines.append("")
+    lines.append(f"- L (attached targets): **{L}**")
+    lines.append(f"- K (truncation): **{K}**, beta: **{beta}**")
+    lines.append(f"- total Katz mass: **{total_mass:.3f}**")
+    lines.append(f"- use-cost: **{use_cost}**")
+    lines.append(f"- prod_whatif (alpha={alpha}, gamma={gamma}): **{prod_whatif:.6f}**")
+    if percentile is not None:
+        lines.append(f"- percentile vs **{percentile_col}**: **{percentile:.2f}%**")
+    lines.append("")
+    lines.append("## Top attached targets")
+    lines.append("")
+    take = min(15, len(attach_names))
+    for name, score in list(zip(attach_names, attach_scores))[:take]:
+        lines.append(f"- {name} — {score:.6f}")
+    lines.append("")
+    lines.append("## Per-hop mass")
+    lines.append("")
+    for k, m in per_hop:
+        lines.append(f"- k={k}: {m:.2f}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"[whatif] wrote report -> {out_path}")
+
 def main():
     ap = argparse.ArgumentParser(description="What-if graph productivity for a new statement.")
     ap.add_argument("--edge_index", required=True)
@@ -211,6 +254,7 @@ def main():
     ap.add_argument("--use_model", action="store_true")
     ap.add_argument("--graph_metrics", default="")
     ap.add_argument("--out_json", default="")
+    ap.add_argument("--report_md", default="", help="optional: write a Markdown report (path). If empty and --out_json is set, will write alongside as .md")
     args = ap.parse_args()
 
     nodes = pd.read_parquet(args.nodes)
@@ -218,7 +262,6 @@ def main():
         nodes_indexed = nodes.set_index("id", drop=False)
         N = int(nodes["id"].max()) + 1
     else:
-        # Assume row index corresponds to id order
         nodes_indexed = nodes.copy()
         nodes_indexed["id"] = np.arange(len(nodes_indexed), dtype=np.int64)
         nodes_indexed = nodes_indexed.set_index("id", drop=False)
@@ -304,13 +347,15 @@ def main():
             nm = nodes_indexed.at[nid, "name"]
             print(f"  - {nm}  weight={w:.4f}")
 
-    if args.out_json:
-        out = {
+    if args.out_json or args.report_md:
+        # Prepare common details
+        attach_names = [nodes_indexed.at[int(x), "name"] for x in attach_targets[:L].tolist()]
+        details = {
             "type_string": args.type_string,
             "L": int(L), "K": int(args.K), "beta": float(args.beta),
             "alpha": float(args.alpha), "gamma": float(args.gamma),
             "attach_targets": [int(x) for x in attach_targets[:L].tolist()],
-            "attach_target_names": [nodes_indexed.at[int(x), "name"] for x in attach_targets[:L].tolist()],
+            "attach_target_names": attach_names,
             "attach_scores": [float(s) for s in attach_scores[:L].tolist()],
             "per_hop": [{"k": int(k), "mass": float(m)} for (k, m) in per_hop],
             "total_mass": float(total_mass),
@@ -319,11 +364,36 @@ def main():
             "percentile": pct,
             "percentile_col": matched_col,
         }
-        Path(args.out_json).parent.mkdir(parents=True, exist_ok=True)
-        import json
-        with open(args.out_json, "w") as f:
-            json.dump(out, f, indent=2, ensure_ascii=False)
-        print(f"[whatif] wrote -> {args.out_json}")
+
+        if args.out_json:
+            Path(args.out_json).parent.mkdir(parents=True, exist_ok=True)
+            import json
+            with open(args.out_json, "w") as f:
+                json.dump(details, f, indent=2, ensure_ascii=False)
+            print(f"[whatif] wrote -> {args.out_json}")
+
+        # Decide report path
+        report_path = None
+        if args.report_md:
+            report_path = Path(args.report_md)
+        elif args.out_json:
+            report_path = Path(args.out_json).with_suffix(".md")
+
+        if report_path is not None:
+            _write_markdown_report(
+                out_path=report_path,
+                type_string=args.type_string,
+                L=int(L), K=int(args.K), beta=float(args.beta),
+                total_mass=float(total_mass),
+                use_cost=int(use_cost),
+                alpha=float(args.alpha), gamma=float(args.gamma),
+                prod_whatif=float(prod_whatif),
+                attach_names=attach_names,
+                attach_scores=[float(s) for s in attach_scores[:L].tolist()],
+                per_hop=[(int(k), float(m)) for (k, m) in per_hop],
+                percentile=pct,
+                percentile_col=matched_col,
+            )
 
 if __name__ == "__main__":
     main()
