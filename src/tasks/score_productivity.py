@@ -20,7 +20,6 @@ def _kth_or_last(scores, k: int) -> float:
     try:
         arr = np.asarray(scores, dtype=np.float32).reshape(-1)
     except Exception:
-        # Fallback for weird objects
         try:
             arr = np.array(list(scores), dtype=np.float32).reshape(-1)
         except Exception:
@@ -50,6 +49,11 @@ def main():
                     help="Python regex to match target names (e.g. '^(List|Finset)\\.')")
     ap.add_argument("--regex_ignore_case", action="store_true",
                     help="Use re.I for --target_regex")
+    # NEW: show which targets are hits at K
+    ap.add_argument("--show_hits", type=int, default=0,
+                    help="if >0, print which filtered targets are hits at this K (top-K)")
+    ap.add_argument("--hits_limit", type=int, default=50,
+                    help="max number of hits to print")
     args = ap.parse_args()
 
     K_LIST = [int(x) for x in args.k_list.split(",")]
@@ -68,10 +72,10 @@ def main():
 
     # Join kinds/names
     nodes = pd.read_parquet(args.nodes)            # id,name
-    name_by_id = nodes.set_index("id")["name"].to_dict()
+    id2name = dict(zip(nodes["id"], nodes["name"]))
     decl = pd.read_parquet(args.decltypes)         # name,kind,...
     kind_by_name = decl.set_index("name")["kind"].to_dict()
-    kind_by_id = {i: kind_by_name.get(name_by_id.get(i, ""), None) for i in all_tgt_ids}
+    kind_by_id = {i: kind_by_name.get(id2name.get(i, ""), None) for i in all_tgt_ids}
 
     # Build filters
     tgt_ids = list(all_tgt_ids)
@@ -82,12 +86,12 @@ def main():
     # prefix filter
     if args.target_prefixes.strip():
         prefixes = tuple(p.strip() for p in args.target_prefixes.split(",") if p.strip())
-        tgt_ids = [tid for tid in tgt_ids if name_by_id.get(tid, "").startswith(prefixes)]
+        tgt_ids = [tid for tid in tgt_ids if id2name.get(tid, "").startswith(prefixes)]
     # regex filter
     if args.target_regex.strip():
         flags = re.I if args.regex_ignore_case else 0
         pat = re.compile(args.target_regex, flags)
-        tgt_ids = [tid for tid in tgt_ids if pat.search(name_by_id.get(tid, ""))]
+        tgt_ids = [tid for tid in tgt_ids if pat.search(id2name.get(tid, ""))]
 
     # Align rankings rows with filtered tgt_ids (intersection in order)
     rk = pd.read_parquet(args.rankings).set_index("target_id")
@@ -96,7 +100,7 @@ def main():
         tgt_ids = [tid for tid in tgt_ids if tid in rk.index]
     rk = rk.loc[tgt_ids]
 
-    # Per-target top-K cutoffs
+    # Per-target top-K cutoffs for all requested K
     taus = {K: rk["scores"].map(lambda s: _kth_or_last(s, K)).to_numpy(np.float32) for K in K_LIST}
 
     # Encode targets
@@ -124,6 +128,27 @@ def main():
         random_frac = K / N
         lift = adopt_frac / random_frac if random_frac > 0 else float("nan")
         print(f"adoption@{K}: {adopt_frac*100:.3f}%  (~{adopt_frac*T:.0f}/{T});  random={random_frac*100:.3f}%  lift={lift:.2f}")
+
+    # Optionally show which specific targets are hits at chosen K
+    if args.show_hits and args.show_hits > 0:
+        K = int(args.show_hits)
+        tauK = taus.get(K)
+        if tauK is None:
+            # compute on the fly if not in K_LIST
+            tauK = rk["scores"].map(lambda s: _kth_or_last(s, K)).to_numpy(np.float32)
+        hits = np.where(s >= tauK)[0]
+        if hits.size == 0:
+            print(f"[hits@{K}] none")
+            return
+        # sort hits by margin descending
+        margins = (s - tauK)[hits]
+        order = np.argsort(-margins)
+        hits = hits[order]
+        print(f"[hits@{K}] showing up to {args.hits_limit} of {len(hits)}:")
+        for idx in hits[:args.hits_limit]:
+            tid = int(tgt_ids[idx])
+            name = id2name.get(tid, f"<{tid}>")
+            print(f" - {name}   score={s[idx]:.6f}  cutoff={tauK[idx]:.6f}  margin={s[idx]-tauK[idx]:.6f}")
 
 if __name__ == "__main__":
     main()

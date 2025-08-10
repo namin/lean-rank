@@ -77,6 +77,7 @@ python -m src.tasks.score_productivity \
   --decltypes data/processed/decltypes.parquet \
   --ckpt outputs/text_ranker.pt \
   --buckets 128 --k_list 10,20,50 \
+  --show_hits 50 --hits_limit 25 \
   --target_kinds theorem,lemma \
   --target_prefixes "TopologicalSpace."
 ```
