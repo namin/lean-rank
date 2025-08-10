@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Disable globbing so special chars in args don't expand
 set -f
 
 # -----------------------------------------------------------------------------
 # Lean Rank — End-to-End Walkthrough Runner
-# -----------------------------------------------------------------------------
-# This version always uses the *exact* Python interpreter from your current shell
-# (or override with PYTHON_BIN=...).
-# No eval, no login subshell; we pass args as arrays with proper quoting.
 # -----------------------------------------------------------------------------
 
 # ------------------------ Config (overridable via env) ------------------------
@@ -36,6 +31,15 @@ TARGET_PREFIXES="${TARGET_PREFIXES:-TopologicalSpace.}"
 # Optional graph pipeline toggles
 DO_GRAPH="${DO_GRAPH:-0}"     # 1 to build graph + metrics + (optional) GNN
 DO_ATTACH="${DO_ATTACH:-0}"   # 1 to reweight rankings and distill text productivity
+
+# New: optional What-if productivity report (Markdown)
+DO_WHATIF="${DO_WHATIF:-1}"
+WHATIF_L="${WHATIF_L:-50}"
+WHATIF_K="${WHATIF_K:-6}"
+WHATIF_BETA="${WHATIF_BETA:-0.2}"
+WHATIF_ALPHA="${WHATIF_ALPHA:-0.2}"
+WHATIF_GAMMA="${WHATIF_GAMMA:-0.5}"
+WHATIF_USE_MODEL="${WHATIF_USE_MODEL:-0}"  # 1 to use learned encoder (needs TEXT_CKPT)
 
 # Force rebuilds
 FORCE="${FORCE:-0}"
@@ -68,7 +72,6 @@ fi
 run_step() {
   local label="$1"; shift
   say "$label"
-  # Pretty print the command
   printf "    %q " "$@"
   printf "\n"
   "$@"
@@ -105,6 +108,10 @@ GNN_SCORES="$PROC_DIR/gnn_productivity.parquet"
 RANKINGS_REWEIGHTED="$PROC_DIR/rankings_reweighted.parquet"
 RANKINGS_REWEIGHTED_EXPLAINED="$PROC_DIR/rankings_reweighted_explained.csv"
 TEXT_PROD_CKPT="$OUT_DIR/text_prod.pt"
+
+# What-if outputs
+WHATIF_JSON="$PROC_DIR/whatif.json"
+WHATIF_MD="$PROC_DIR/whatif.md"
 
 # --------------------------------- Steps --------------------------------------
 
@@ -212,6 +219,48 @@ if [[ "$DO_GRAPH" == "1" ]]; then
       --ckpt "$GNN_CKPT" \
       --out "$GNN_SCORES" \
       --fanout 15,15 --batch_nodes 65536 --device cpu
+fi
+
+# --------------------------- Optional: What-if report --------------------------
+if [[ "$DO_WHATIF" == "1" ]]; then
+  say "---- What-if productivity (Markdown report) ----"
+  # Ensure edge_index exists; if not, build minimal graph artifacts
+  if [[ ! -f "$EDGE_INDEX" ]]; then
+    say "edge_index not found; building graph artifacts needed for what-if"
+    run_step "8*) Build graph edges for what-if" \
+      "$PYTHON_BIN" -m src.tasks.build_graph \
+        --contexts "$CONTEXTS" \
+        --nodes "$NODES" \
+        --out_edges "$EDGE_INDEX" \
+        --out_metrics "$GRAPH_METRICS" \
+        --katz_k 8 --katz_beta "$WHATIF_BETA" \
+        --reach_h 3 \
+        --alpha "$WHATIF_ALPHA" --gamma "$WHATIF_GAMMA"
+  fi
+
+  # Assemble optional use_model args
+  WHATIF_ARGS=()
+  if [[ "$WHATIF_USE_MODEL" == "1" ]]; then
+    WHATIF_ARGS+=(--ckpt "$TEXT_CKPT" --use_model)
+  fi
+  # Graph metrics are optional (for percentile)
+  if [[ -f "$GRAPH_METRICS" ]]; then
+    WHATIF_ARGS+=(--graph_metrics "$GRAPH_METRICS")
+  fi
+
+  run_step "W) What-if report" \
+    "$PYTHON_BIN" -m src.tasks.score_graph_whatif \
+      --edge_index "$EDGE_INDEX" \
+      --nodes "$NODES" \
+      --decltypes "$DECLTYPES" \
+      --type_features "$TYPE_FEATS" \
+      --type_string "$TYPE_STRING" \
+      --target_kinds "$TARGET_KINDS" \
+      --target_prefixes "$TARGET_PREFIXES" \
+      --L "$WHATIF_L" --K "$WHATIF_K" --beta "$WHATIF_BETA" --alpha "$WHATIF_ALPHA" --gamma "$WHATIF_GAMMA" \
+      --out_json "$WHATIF_JSON" \
+      --report_md "$WHATIF_MD" \
+      "${WHATIF_ARGS[@]}"
 fi
 
 # --------------------------- Optional: Attach signals --------------------------
