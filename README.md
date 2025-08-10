@@ -13,6 +13,7 @@ If can also suggest a productivity score for a new target by calculating how it 
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
+
 # core (always)
 pip install -r requirements.txt
 
