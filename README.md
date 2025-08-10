@@ -1,9 +1,8 @@
 # Lean Rank
 
-This is a single-path, text-only pipeline that learns to **rank useful premises**
-for a target declaration using just two inputs:
+A pipeline that learns to **rank useful premises** for a target declaration using just two inputs, premises and declaration types.
 
-We use two computed files using [`kim-em/lean-training-data`](https://github.com/kim-em/lean-training-data):
+We use [`kim-em/lean-training-data`](https://github.com/kim-em/lean-training-data):
 - `premises.txt` — from `lake exe premises Mathlib` (declaration dependencies)
 - `declaration_types.txt` — from `lake exe declaration_types Mathlib` (names + types)
 
