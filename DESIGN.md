@@ -1,6 +1,6 @@
-# DESIGN.md — Lean Rank
+# Design of `lean-rank`
 
-A high-level map of the system: what each component does, the data it reads/writes, and how the pieces fit. This is meant to be read top-to-bottom once; after that, the per-command README/ walkthroughs will make more intuitive sense.
+A high-level map of the system: what each component does, the data it reads/writes, and how the pieces fit. This is meant to be read top-to-bottom once; after that, the per-command walkthroughs will make more intuitive sense.
 
 ---
 
