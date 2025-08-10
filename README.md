@@ -18,9 +18,6 @@ pip install -r requirements.txt
 
 # optional: GNN (choose a combo that matches your Torch build; see comments inside)
 pip install -r requirements-gnn.txt
-
-# optional: FAISS
-pip install -r requirements-faiss.txt
 ```
 
 ## Data
