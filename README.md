@@ -14,7 +14,14 @@ If can also suggest a productivity score for a new target by calculating how it 
 ### 0) Install
 ```bash
 python -m venv .venv && source .venv/bin/activate
+# core (always)
 pip install -r requirements.txt
+
+# optional: GNN (choose a combo that matches your Torch build; see comments inside)
+pip install -r requirements-gnn.txt
+
+# optional: FAISS
+pip install -r requirements-faiss.txt
 ```
 
 ### 1) Place your inputs
