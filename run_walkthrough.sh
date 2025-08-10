@@ -4,7 +4,7 @@ set -euo pipefail
 set -f
 
 # -----------------------------------------------------------------------------
-# Lean Rank — End-to-End Walkthrough Runner (v3, fixed interpreter)
+# Lean Rank — End-to-End Walkthrough Runner
 # -----------------------------------------------------------------------------
 # This version always uses the *exact* Python interpreter from your current shell
 # (or override with PYTHON_BIN=...).
