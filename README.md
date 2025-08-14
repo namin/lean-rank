@@ -116,5 +116,4 @@ Key insights from this analysis:
 - Reveals that structural complexity alone poorly predicts productivity (R² ≈ 0.02)
 - High-productivity theorems have MORE arrows but FEWER universal quantifiers
 
-This helps understand what makes theorems reusable and guides the design of new foundational lemmas.
 
