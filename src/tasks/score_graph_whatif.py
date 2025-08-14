@@ -350,9 +350,15 @@ def main():
         # In the future, we could run Lean to parse the new type string directly
         similar_structs = structures[structures['id'].isin(attached_target_ids[:min(10, len(attached_target_ids))])]
         if not similar_structs.empty:
-            # Use median use-cost from similar declarations
-            use_cost = similar_structs['use_cost'].median() if 'use_cost' in similar_structs.columns else _count_use_cost(args.type_string)
-            print(f"[whatif] Using sophisticated use-cost from similar declarations: {use_cost:.2f}")
+            # Prefer learned use-cost, then computed, then fallback
+            if 'learned_use_cost' in similar_structs.columns:
+                use_cost = similar_structs['learned_use_cost'].median()
+                print(f"[whatif] Using LEARNED use-cost from similar declarations: {use_cost:.2f}")
+            elif 'use_cost' in similar_structs.columns:
+                use_cost = similar_structs['use_cost'].median()
+                print(f"[whatif] Using computed use-cost from similar declarations: {use_cost:.2f}")
+            else:
+                use_cost = _count_use_cost(args.type_string)
         else:
             use_cost = _count_use_cost(args.type_string)
     else:

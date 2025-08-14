@@ -112,6 +112,10 @@ RANKINGS_REWEIGHTED="$PROC_DIR/rankings_reweighted.parquet"
 RANKINGS_REWEIGHTED_EXPLAINED="$PROC_DIR/rankings_reweighted_explained.csv"
 TEXT_PROD_CKPT="$OUT_DIR/text_prod.pt"
 
+# Use-cost model outputs
+USE_COST_CKPT="$OUT_DIR/use_cost_model.pt"
+STRUCTURES_WITH_COST="$PROC_DIR/structures_with_learned_cost.parquet"
+
 # What-if outputs
 WHATIF_JSON="$PROC_DIR/whatif.json"
 WHATIF_MD="$PROC_DIR/whatif.md"
@@ -255,6 +259,27 @@ if [[ "$DO_WHATIF" == "1" ]]; then
         --alpha "$WHATIF_ALPHA" --gamma "$WHATIF_GAMMA"
   fi
 
+  # Train use-cost model if we have graph metrics and structures
+  if [[ -f "$GRAPH_METRICS" && -f "$STRUCTURES" ]]; then
+    maybe_run "U) Train use-cost model from usage patterns" "$USE_COST_CKPT" \
+      "$PYTHON_BIN" -m src.tasks.train_use_cost_model \
+        --structures "$STRUCTURES" \
+        --graph_metrics "$GRAPH_METRICS" \
+        --out_ckpt "$USE_COST_CKPT" \
+        --epochs 30 --batch_size 256 --lr 1e-3
+
+    maybe_run "U2) Score learned use-cost" "$STRUCTURES_WITH_COST" \
+      "$PYTHON_BIN" -m src.tasks.score_use_cost \
+        --structures "$STRUCTURES" \
+        --ckpt "$USE_COST_CKPT" \
+        --out "$STRUCTURES_WITH_COST"
+    
+    # Use learned cost in what-if
+    STRUCTURES_FOR_WHATIF="$STRUCTURES_WITH_COST"
+  else
+    STRUCTURES_FOR_WHATIF="$STRUCTURES"
+  fi
+
   # Assemble optional use_model args
   WHATIF_ARGS=()
   if [[ "$WHATIF_USE_MODEL" == "1" ]]; then
@@ -265,7 +290,9 @@ if [[ "$DO_WHATIF" == "1" ]]; then
     WHATIF_ARGS+=(--graph_metrics "$GRAPH_METRICS")
   fi
   # Structures are optional (for sophisticated use-cost)
-  if [[ -f "$STRUCTURES" ]]; then
+  if [[ -f "$STRUCTURES_FOR_WHATIF" ]]; then
+    WHATIF_ARGS+=(--structures "$STRUCTURES_FOR_WHATIF")
+  elif [[ -f "$STRUCTURES" ]]; then
     WHATIF_ARGS+=(--structures "$STRUCTURES")
   fi
 
