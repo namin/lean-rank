@@ -340,5 +340,40 @@ if [[ "$DO_ATTACH" == "1" ]]; then
       --epochs 3 --batch 8192 --lr 2e-3 --hidden 256 --device cpu
 fi
 
+# --------------------------- Optional: Semantic Productivity Prediction --------------------------
+DO_SEMANTIC="${DO_SEMANTIC:-0}"
+
+if [[ "$DO_SEMANTIC" == "1" ]]; then
+  say "---- Semantic Productivity Prediction ----"
+  
+  # Ensure graph metrics exist (needed for actual productivity values)
+  if [[ ! -f "$GRAPH_METRICS" ]]; then
+    say "Building graph metrics needed for semantic productivity..."
+    run_step "S1) Build graph for productivity data" \
+      "$PYTHON_BIN" -m src.tasks.build_graph \
+        --contexts "$CONTEXTS" \
+        --nodes "$NODES" \
+        --out_edges "$EDGE_INDEX" \
+        --out_metrics "$GRAPH_METRICS" \
+        --katz_k 8 --katz_beta 0.2 \
+        --reach_h 3 \
+        --alpha 0.2 --gamma 0.5
+  fi
+  
+  run_step "S2) Predict productivity via semantic similarity" \
+    "$PYTHON_BIN" -m src.tasks.predict_productivity_semantic \
+      --structures "$STRUCTURES" \
+      --graph_metrics "$GRAPH_METRICS" \
+      --features "$STRUCT_FEATS" \
+      --ckpt "$TEXT_CKPT" \
+      --analyze_clusters \
+      --type_string "$TYPE_STRING"
+  
+  say "Semantic analysis identifies:"
+  say "  - High-productivity 'anchor' theorems"
+  say "  - Productivity clusters in embedding space"
+  say "  - Predicted productivity based on similarity to existing theorems"
+fi
+
 echo ""
 echo "All done."
