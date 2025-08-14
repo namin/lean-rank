@@ -46,6 +46,8 @@ FORCE="${FORCE:-0}"
 
 # New type string for cold-start + productivity (edit as needed)
 TYPE_STRING="${TYPE_STRING:-∀ {X : TopCat} (x : ↑X) (U : TopologicalSpace.OpenNhds (↑(CategoryTheory.CategoryStruct.id X) x)), (TopologicalSpace.OpenNhds.map (CategoryTheory.CategoryStruct.id X) x).obj U = U}"
+TYPE_STRING="∀ p : ℕ, Prime p → p = 2 ∨ Odd p"
+TYPE_STRING="∀ a b : ℕ, Coprime a b → ∀ c : ℕ, a ∣ c → b ∣ c → a * b ∣ c"
 
 # ------------------------------- Sanity checks --------------------------------
 need_file() { [[ -f "$1" ]] || { echo "ERROR: missing $1"; exit 1; }; }
