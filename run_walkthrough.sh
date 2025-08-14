@@ -28,7 +28,7 @@ K_LIST="${K_LIST:-10,20,50}"
 TARGET_KINDS="${TARGET_KINDS:-theorem,lemma}"
 TARGET_PREFIXES="${TARGET_PREFIXES:-TopologicalSpace.}"
 
-# Optional graph pipeline toggles
+# Optional pipeline toggles
 DO_GRAPH="${DO_GRAPH:-0}"     # 1 to build graph + metrics + (optional) GNN
 DO_ATTACH="${DO_ATTACH:-0}"   # 1 to reweight rankings and distill text productivity
 
@@ -138,23 +138,19 @@ maybe_run "2b) Build type features" "$TYPE_FEATS" \
     --out "$TYPE_FEATS" \
     --buckets "$BUCKETS"
 
-# 2c) Build structured features (optional but recommended for use-cost)
-USE_STRUCT_FEATS="${USE_STRUCT_FEATS:-1}"
-if [[ "$USE_STRUCT_FEATS" == "1" ]]; then
-  maybe_run "2c) Build structured features" "$STRUCT_FEATS" \
-    "$PYTHON_BIN" src/build_declaration_structures.py \
-      --nodes "$NODES" \
-      --structures-jsonl "$STRUCT_JSONL" \
-      --out-structures "$STRUCTURES" \
-      --out-features "$STRUCT_FEATS" \
-      --buckets "$BUCKETS"
-  
-  # NOTE: We keep using TYPE_FEATS for the model since it was trained on those dimensions
-  # STRUCT_FEATS and STRUCTURES are used for use-cost calculation in what-if analysis
-  if [[ -f "$STRUCTURES" ]]; then
-    say "Structured features available for use-cost analysis"
-  fi
-fi
+# 2c) Build combined structural+text features
+maybe_run "2c) Build combined structural+text features" "$STRUCT_FEATS" \
+  "$PYTHON_BIN" src/build_declaration_structures.py \
+    --nodes "$NODES" \
+    --structures-jsonl "$STRUCT_JSONL" \
+    --out-structures "$STRUCTURES" \
+    --out-features "$STRUCT_FEATS" \
+    --buckets "$BUCKETS" \
+    --combine-with-text \
+    --text-features "$TYPE_FEATS"
+
+# Always use structural features for everything
+TYPE_FEATS="$STRUCT_FEATS"
 
 # 3) Train text ranker
 maybe_run "3) Train text ranker" "$TEXT_CKPT" \

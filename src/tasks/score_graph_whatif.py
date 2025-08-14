@@ -60,9 +60,16 @@ def _compute_use_cost_from_structure(structure: pd.Series) -> float:
         specificity + classical_penalty - polymorphism_bonus
     )
 
-def _featurize_new_type(type_string: str, buckets: int) -> np.ndarray:
+def _featurize_new_type(type_string: str, buckets: int, target_dim: int = None) -> np.ndarray:
     base, tri, head = featurize_type(type_string, buckets=buckets)
-    return np.concatenate([base, tri, head]).astype(np.float32)
+    x_new = np.concatenate([base, tri, head]).astype(np.float32)
+    
+    # Pad to match target dimension if needed (for combined structural+text features)
+    if target_dim is not None and x_new.shape[0] < target_dim:
+        padding = target_dim - x_new.shape[0]
+        x_new = np.concatenate([np.zeros(padding, dtype=np.float32), x_new])
+    
+    return x_new
 
 def _build_target_mask(nodes_df: pd.DataFrame,
                        decl_df: pd.DataFrame,
@@ -307,7 +314,9 @@ def main():
         print("[whatif] No candidate targets after filtering. Relax --target_kinds/--target_prefixes.", file=sys.stderr)
         sys.exit(1)
 
-    x_new = _featurize_new_type(args.type_string, buckets=args.buckets)
+    # Determine target dimension from loaded features
+    target_dim = X.shape[1]
+    x_new = _featurize_new_type(args.type_string, buckets=args.buckets, target_dim=target_dim)
 
     if args.use_model:
         if not args.ckpt:

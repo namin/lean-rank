@@ -27,10 +27,21 @@ def main():
     enc = MLPEncoder(in_dim=cfg["in_dim"], emb_dim=cfg["emb_dim"], hidden=cfg["hidden"])
     enc.load_state_dict(ckpt["state_dict"]); enc.eval()
 
-    # featurize new type
+    # featurize new type - must match training feature dimensions
     from ..utils.type_features import featurize_type
     base, tri, head = featurize_type(args.type_string, buckets=args.buckets)
     x_new = np.concatenate([base, tri, head]).astype(np.float32)
+    
+    # Check if we need to pad features to match model dimensions
+    if x_new.shape[0] < cfg["in_dim"]:
+        # Model was trained on combined features (structural + text)
+        # We only have text features, so prepend zeros for missing structural features
+        padding = cfg["in_dim"] - x_new.shape[0]
+        x_new = np.concatenate([np.zeros(padding, dtype=np.float32), x_new])
+    elif x_new.shape[0] > cfg["in_dim"]:
+        print(f"Warning: features ({x_new.shape[0]}d) larger than model expects ({cfg['in_dim']}d), truncating")
+        x_new = x_new[:cfg["in_dim"]]
+    
     x_new_t = torch.from_numpy(x_new).unsqueeze(0)  # (1, D)
 
     # premise embeddings in chunks

@@ -126,9 +126,11 @@ def compute_use_cost_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def create_structured_features(
     structures_df: pd.DataFrame,
-    buckets: int = 128
+    buckets: int = 128,
+    include_text_features: bool = True,
+    type_features_path: Optional[Path] = None
 ) -> np.ndarray:
-    """Create feature matrix from structures."""
+    """Create feature matrix from structures, optionally combined with text features."""
     
     n = len(structures_df)
     
@@ -144,6 +146,7 @@ def create_structured_features(
         np.log1p(structures_df['num_arrows'].fillna(0)),
         np.log1p(structures_df['max_nesting_depth'].fillna(0)),
         np.log1p(structures_df['conclusion_arity'].fillna(0)),
+        np.log1p(structures_df['num_exists'].fillna(0)),  # Add exists count
     ])
     features.append(count_features)
     
@@ -168,10 +171,17 @@ def create_structured_features(
         np.log1p(structures_df['use_cost'].fillna(1)),
         structures_df['premise_cost'].fillna(0),
         structures_df['nesting_penalty'].fillna(0),
+        structures_df['specificity_cost'].fillna(0),
     ])
     features.append(cost_features)
     
-    # 5. Conclusion head symbol (one-hot encoded with hashing)
+    # 5. Namespace depth as feature
+    namespace_features = np.column_stack([
+        np.log1p(structures_df['namespace_depth'].fillna(0)),
+    ])
+    features.append(namespace_features)
+    
+    # 6. Conclusion head symbol (one-hot encoded with hashing)
     conclusion_heads = structures_df['conclusion_head'].fillna('unknown').values
     head_features = np.zeros((n, buckets // 4))  # Reserve 1/4 of buckets for heads
     for i, head in enumerate(conclusion_heads):
@@ -180,18 +190,24 @@ def create_structured_features(
             head_features[i, idx] = 1.0
     features.append(head_features)
     
-    # Combine all features
-    X = np.hstack(features).astype(np.float32)
+    # Combine structural features
+    X_struct = np.hstack(features).astype(np.float32)
     
-    return X
+    # 7. Don't combine here - just return structural features
+    # Combination will happen at the full dataset level in main()
+    return X_struct
 
-def create_fallback_features(nodes_df: pd.DataFrame, buckets: int = 128) -> tuple:
+def create_fallback_features(nodes_df: pd.DataFrame, buckets: int = 128, target_dim: int = None) -> tuple:
     """Create minimal fallback features for nodes without structures."""
     
     n = len(nodes_df)
     
-    # Create minimal features (mostly zeros with some basic patterns)
-    X = np.zeros((n, 16 + buckets // 4), dtype=np.float32)
+    # Match the dimension of structured features if provided
+    if target_dim is not None:
+        X = np.zeros((n, target_dim), dtype=np.float32)
+    else:
+        # Default: 20 basic features + buckets//4 for head symbol
+        X = np.zeros((n, 20 + buckets // 4), dtype=np.float32)
     
     # Add some basic features from node names
     for i, name in enumerate(nodes_df['name'].values):
@@ -237,6 +253,11 @@ def main():
     parser.add_argument('--buckets', type=int, default=128)
     parser.add_argument('--force', action='store_true',
                        help='Force re-extraction even if file exists')
+    parser.add_argument('--combine-with-text', action='store_true',
+                       help='Combine structural features with original text features')
+    parser.add_argument('--text-features', type=Path,
+                       default=Path('data/processed/type_features.npz'),
+                       help='Path to original text features to combine with')
     args = parser.parse_args()
     
     # Load nodes
@@ -255,7 +276,11 @@ def main():
             structures_df = compute_use_cost_features(structures_df)
             
             # Create feature matrix
-            X = create_structured_features(structures_df, args.buckets)
+            X = create_structured_features(
+                structures_df, 
+                args.buckets,
+                include_text_features=False  # Don't combine yet
+            )
             
             # Handle nodes without structures by filling with defaults
             if len(structures_df) < len(nodes_df):
@@ -263,8 +288,8 @@ def main():
                 missing_ids = set(nodes_df['id']) - set(structures_df['id'])
                 missing_nodes = nodes_df[nodes_df['id'].isin(missing_ids)]
                 
-                # Create default features for missing nodes
-                missing_X, missing_structs = create_fallback_features(missing_nodes, args.buckets)
+                # Create default features for missing nodes with matching dimensions
+                missing_X, missing_structs = create_fallback_features(missing_nodes, args.buckets, target_dim=X.shape[1])
                 
                 # Combine
                 full_X = np.zeros((len(nodes_df), X.shape[1]), dtype=np.float32)
@@ -296,6 +321,18 @@ def main():
         reorder_idx = [id_to_idx[nid] for nid in nodes_df['id']]
         X = X[reorder_idx]
         structures_df = structures_df.iloc[reorder_idx].reset_index(drop=True)
+    
+    # Combine with text features if requested
+    if args.combine_with_text and args.text_features.exists():
+        try:
+            X_text = np.load(args.text_features)['X'].astype(np.float32)
+            if X_text.shape[0] == X.shape[0]:
+                logger.info(f"Combining structural features {X.shape} with text features {X_text.shape}")
+                X = np.hstack([X, X_text])
+            else:
+                logger.warning(f"Text features shape {X_text.shape[0]} doesn't match {X.shape[0]}, using only structural")
+        except Exception as e:
+            logger.warning(f"Could not load text features: {e}")
     
     # Save structures
     structures_df.to_parquet(args.out_structures)

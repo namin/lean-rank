@@ -17,12 +17,14 @@ Everything is streaming / CPU-friendly by default. GNN is optional.
 
 ---
 
-## 2) Bird’s‑eye view
+## 2) Bird's‑eye view
 
 ```
-kim-em/lean-training-data
+kim-em/lean-training-data (submodule)
    ├─ premises.txt                # declaration dependencies
-   └─ declaration_types.txt       # name + kind + type for every decl
+   ├─ declaration_types.txt       # name + kind + type for every decl
+   └─ scripts/
+       └─ declaration_structures.lean  # NEW: Lean metaprogram for structural extraction
           │
           ▼
 [build_dataset]  ─────────┐
@@ -33,11 +35,20 @@ kim-em/lean-training-data
           │                               │
           ▼                               ▼
 [build_decltypes]                  [build_type_features]
-  decltypes.parquet                 type_features.npz (X)
-  (id, name, kind, type)           └─ basic stats + char-3grams + head symbol hash
+  decltypes.parquet                 type_features.npz
+  (id, name, kind, type)           └─ basic stats + char-3grams + head symbol
+          │                               │
+          ▼                               │
+[build_declaration_structures] ◄──────────┘
+  structures.parquet               structure_features.npz
+  └─ explicit premises count       └─ Combined structural + text features (313-dim)
+  └─ nesting depth                    - Premise counts, ratios
+  └─ typeclass constraints            - Use-cost features
+  └─ classical logic usage            - Original text patterns
+  └─ sophisticated use-cost
           │
           ▼
-[train_text_ranker]  (shared MLP encoder for type features)
+[train_text_ranker]  (shared MLP encoder for combined features)
   outputs/text_ranker.pt
           │
           ├─────────────► [score_text_rankings] → rankings.parquet
@@ -47,7 +58,7 @@ kim-em/lean-training-data
           │                        └─ Cold-start premise ranking for a new type string
           │
           └─────────────► [score_productivity] → prints adoption@K + lift (+ hits)
-                                   └─ “Would the new statement be adopted by today’s targets?”
+                                   └─ "Would the new statement be adopted by today's targets?"
 ```
 
 **Optional graph add-on**
@@ -120,10 +131,33 @@ Converts types into a numeric `X` matrix (`npz`). Hash sizes (`--buckets`) must 
 
 ---
 
-### B) Text ranker (core model)
+### B) Structural feature extraction
+
+**`lean-training-data/scripts/declaration_structures.lean`**  
+A Lean metaprogram that traverses the `Expr` AST to extract:
+- **Explicit premise count**: How many non-implicit arguments must be provided (key usability metric!)
+- **Implicit arguments & typeclass constraints**: Hidden complexity
+- **Nesting depth**: Maximum binder depth
+- **Classical logic usage**: Detects `Classical.choice`, `Classical.em`, etc.
+- **Polymorphism**: Universe parameters present
+- **Decidability**: Has decidable instances
+- **Conclusion structure**: Head symbol and arity
+
+**`src/build_declaration_structures.py`**  
+- Runs the Lean extractor (can take ~30 minutes for full Mathlib)
+- Parses JSONL output and aligns with nodes
+- Computes **use-cost** from structural properties:
+  ```python
+  use_cost = 1.0 + premise_cost + nesting_penalty + specificity_cost 
+             + classical_penalty - polymorphism_bonus - decidable_bonus
+  ```
+- Creates combined features: structural (51-dim) + text (262-dim) = 313-dim total
+
+### C) Text ranker (core model)
 
 - **Model:** shared MLP encoder for both targets and premises. Given features `x`, we produce an embedding `e = MLP(x)`; the score is a dot product: `s(t, p) = ⟨e_t, e_p⟩`.
-- **Training:** for each target, contrast positive premises vs. sampled negatives (`--neg_per_pos`). Loss is a standard “one positive among negatives” softmax (InfoNCE-like) over dot-products. It’s CPU-fast.
+- **Training:** for each target, contrast positive premises vs. sampled negatives (`--neg_per_pos`). Loss is a standard "one positive among negatives" softmax (InfoNCE-like) over dot-products. It's CPU-fast.
+- **Features:** Now uses **combined structural + text features** (313-dim) for richer representation
 
 **Files:**  
 `src/tasks/train_text_ranker.py`, `src/tasks/score_text_rankings.py` (embeds everything, retrieves Top-K per target; chunked), `src/tasks/explain_rankings.py`
@@ -213,7 +247,7 @@ and convert to a single “productivity‑like” score with a simple **use‑co
 - \(\beta\): hop decay (down‑weights long chains).  
 - \(\alpha\): how much to trust transitive mass vs direct attachments.  
 - \(\gamma\): strength of the use‑cost penalty.  
-- **use_cost**: rough proxy from the type string (counts of `→` and `∀` for now; swap in a richer parser later).
+- **use_cost**: Computed from median use-cost of structurally similar declarations (based on explicit premise count, nesting depth, typeclass burden, etc.) instead of crude string counting.
 
 This is a **personalized** centrality score: it’s computed **relative to your statement** and the region of the graph it would connect to.
 

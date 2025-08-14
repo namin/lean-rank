@@ -41,14 +41,29 @@ Outputs:
 
 ### 3) Parse declaration types and build features
 ```bash
+# Basic type features (char-3grams, etc.)
 python -m src.build_decltypes   --decltypes data/declaration_types.txt   --nodes data/processed/nodes.parquet   --out_dir data/processed
 
 python -m src.tasks.build_type_features   --decltypes data/processed/decltypes.parquet   --nodes data/processed/nodes.parquet   --out data/processed/type_features.npz   --buckets 128
+
+# NEW: Structural features via Lean metaprogramming
+# First, extract structures (this runs Lean and can take ~30 min for full Mathlib)
+cd lean-training-data && lake exe declaration_structures Mathlib > ../data/declaration_structures.jsonl
+
+# Then build combined structural + text features
+python src/build_declaration_structures.py   --structures-jsonl data/declaration_structures.jsonl   --nodes data/processed/nodes.parquet   --out-structures data/processed/structures.parquet   --out-features data/processed/structure_features.npz   --combine-with-text   --text-features data/processed/type_features.npz   --buckets 128
 ```
+
+The structural features include:
+- Explicit premise counts (key for usability!)
+- Nesting depth and complexity metrics
+- Sophisticated use-cost calculation
+- Combined 313-dimensional representation
 
 ### 4) Train the text ranker (CPU, fast)
 ```bash
-python -m src.tasks.train_text_ranker   --features data/processed/type_features.npz   --contexts data/processed/contexts.jsonl   --out_ckpt outputs/text_ranker.pt   --emb_dim 64 --batch 512 --neg_per_pos 8 --epochs 1
+# Use combined structural features for better performance
+python -m src.tasks.train_text_ranker   --features data/processed/structure_features.npz   --contexts data/processed/contexts.jsonl   --out_ckpt outputs/text_ranker.pt   --emb_dim 64 --batch 512 --neg_per_pos 8 --epochs 1
 ```
 
 ### 5) Score rankings for all targets
