@@ -81,7 +81,7 @@ def analyze_premises_effect(df: pd.DataFrame):
         print("  ✗ No significant relationship found")
     
     # ANOVA for continuous outcome
-    groups = [group['out_deg'].values for name, group in df.groupby('premise_bucket')]
+    groups = [group['out_deg'].values for name, group in df.groupby('premise_bucket', observed=False)]
     f_stat, p_anova = stats.f_oneway(*groups)
     print(f"\nANOVA test (premises vs out-degree):")
     print(f"  F = {f_stat:.2f}, p-value = {p_anova:.4e}")
@@ -232,7 +232,8 @@ def predict_new_theorem_usage(
         if feat not in new_theorem.columns:
             new_theorem[feat] = 0
     
-    X_new = new_theorem[features].values
+    # Create DataFrame with correct feature names to avoid sklearn warning
+    X_new = pd.DataFrame(new_theorem[features].values, columns=features)
     X_new_scaled = scaler.transform(X_new)
     
     # Predict
