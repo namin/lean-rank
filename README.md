@@ -5,7 +5,7 @@ A pipeline that learns to **rank useful premises** for a target declaration usin
 We use [`kim-em/lean-training-data`](https://github.com/kim-em/lean-training-data) (included as submodule):
 - `premises.txt` — from `lake exe premises Mathlib` (declaration dependencies)
 - `declaration_types.txt` — from `lake exe declaration_types Mathlib` (names + types)
-- `declaration_structures` — our custom Lean metaprogram that extracts structural features, from `lake exe declaration_structures Mathlib`
+- `declaration_structures.jsonl` — our custom Lean metaprogram that extracts structural features, from `lake exe declaration_structures Mathlib`
 
 ## Key Features
 
@@ -34,7 +34,7 @@ Generated from the `lean-training data` submodule.
 
 - `data/premises.txt` (output of `lake exe premises Mathlib`)
 - `data/declaration_types.txt` (output of `lake exe declaration_types Mathlib`)
-- `data/declaration_structures.txt` (output of `lake exe declaration_structures Mathlib`)
+- `data/declaration_structures.jsonl` (output of `lake exe declaration_structures Mathlib`)
 
 ## Run
 
