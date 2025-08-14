@@ -104,7 +104,8 @@ def compute_use_cost_features(df: pd.DataFrame) -> pd.DataFrame:
     df['decidable_bonus'] = df['has_decidable_instances'].astype(float) * 0.2
     
     # Namespace specificity (deeper = more specialized)
-    df['specificity_cost'] = np.log1p(df['namespace_depth'].clip(lower=0) - 2)  # -2 for base namespace
+    # Clip to avoid negative values before log1p
+    df['specificity_cost'] = np.log1p(np.maximum(0, df['namespace_depth'] - 2))
     
     # Combined sophisticated use-cost
     df['use_cost'] = (
@@ -223,16 +224,36 @@ def create_fallback_features(nodes_df: pd.DataFrame, buckets: int = 128, target_
         name_hash = hash(name) % (buckets // 4)
         X[i, 16 + name_hash] = 1.0
     
-    # Create default structures DataFrame
+    # Create default structures DataFrame with ALL columns
     structures_df = pd.DataFrame({
         'id': nodes_df['id'],
         'name': nodes_df['name'],
-        'use_cost': 1.0,
+        'kind': 'unknown',
+        'type': '',
+        'binders': None,
         'num_explicit_premises': 0,
         'num_implicit_args': 0,
         'num_typeclass_constraints': 0,
+        'num_forall': 0,
+        'num_exists': 0,
+        'num_arrows': 0,
+        'max_nesting_depth': 0,
+        'conclusion_head': '',
+        'conclusion_arity': 0,
+        'uses_classical': False,
+        'namespace_depth': 0,
+        'is_polymorphic': False,
+        'has_decidable_instances': False,
+        'premise_cost': 0.0,
+        'nesting_penalty': 0.0,
+        'polymorphism_bonus': 0.0,
+        'classical_penalty': 0.0,
+        'decidable_bonus': 0.0,
+        'specificity_cost': 0.0,
+        'use_cost': 1.0,
         'has_premises': False,
-        'premise_cost': 0.0
+        'premise_ratio': 0.0,
+        'implicit_ratio': 0.0
     })
     
     return X, structures_df
