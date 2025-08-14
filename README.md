@@ -100,3 +100,21 @@ print(f'Correlation: {df[\"use_cost\"].corr(df[\"learned_use_cost\"]):.2f}')
 
 The learned model often produces different costs than the formula, revealing that usage patterns don't follow simple structural rules.
 
+### Productivity Prediction
+
+Learn to predict how many downstream theorems a new statement will enable:
+
+```bash
+python3 -m src.tasks.learn_productivity_model \
+  --structures data/processed/structures.parquet \
+  --graph_metrics data/processed/graph_metrics.parquet
+```
+
+Key insights from this analysis:
+- Identifies a "productivity sweet spot": theorems with 1-3 premises, depth 3-8, ≤3 foralls are **2.72x more productive**
+- Shows that simple, fundamental theorems (Eq, id, congrArg) enable the most downstream work
+- Reveals that structural complexity alone poorly predicts productivity (R² ≈ 0.02)
+- High-productivity theorems have MORE arrows but FEWER universal quantifiers
+
+This helps understand what makes theorems reusable and guides the design of new foundational lemmas.
+
