@@ -60,3 +60,43 @@ No configuration needed - it just works with the best available features!
 - [STEPS.md](STEPS.md) - Detailed step-by-step walkthrough
 - [lean-training-data/README.md](lean-training-data/README.md#declaration_structures) - Includes documentation for our `declaration_structures` tool
 
+## Analysis Tools
+
+Beyond the main pipeline, we provide analysis scripts to understand feature-usage relationships:
+
+### Feature-Usage Analysis
+
+Analyzes how structural features relate to actual usage patterns in Mathlib:
+
+```bash
+# Run after the main pipeline completes
+python3 -m src.tasks.analyze_feature_usage \
+  --structures data/processed/structures.parquet \
+  --graph_metrics data/processed/graph_metrics.parquet
+```
+
+This reveals insights like:
+- Theorems with 1-2 premises are most frequently used (the "sweet spot")
+- Deep nesting (`max_nesting_depth`) strongly predicts usage (+7.5 coefficient)
+- Many universal quantifiers (`num_forall`) strongly predict non-usage (-7.9 coefficient)
+- Only 58% of theorems are ever used, while 100% of constructors are used
+- Structural features can predict usage with ~74% accuracy
+
+### Compare Learned vs Formula-based Use-Cost
+
+To see what the use-cost model learned:
+
+```bash
+python3 -c "
+import pandas as pd
+structures = pd.read_parquet('data/processed/structures.parquet')
+learned = pd.read_parquet('data/processed/structures_with_learned_cost.parquet')
+df = structures.merge(learned[['id', 'learned_use_cost']], on='id')
+print(f'Formula cost: {df[\"use_cost\"].mean():.2f} ± {df[\"use_cost\"].std():.2f}')
+print(f'Learned cost: {df[\"learned_use_cost\"].mean():.2f} ± {df[\"learned_use_cost\"].std():.2f}')
+print(f'Correlation: {df[\"use_cost\"].corr(df[\"learned_use_cost\"]):.2f}')
+"
+```
+
+The learned model often produces different costs than the formula, revealing that usage patterns don't follow simple structural rules.
+
