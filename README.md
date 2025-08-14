@@ -47,12 +47,10 @@ FORCE=1 ./run_walkthrough.sh
 ```
 
 The pipeline automatically:
-1. Extracts structural features via Lean metaprogramming (if needed)
-2. Combines structural + text features (313 dimensions)
-3. Trains model with enhanced features
+1. Extracts structural features
+2. Combines structural + text features
+3. Trains model
 4. Calculates use-cost for what-if analysis
-
-No configuration needed - it just works with the best available features!
 
 ## Documentation
 
