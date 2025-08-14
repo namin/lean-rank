@@ -1,0 +1,3 @@
+[submodule "lean-training-data"]
+	path = lean-training-data
+	url = https://github.com/namin/lean-training-data.git

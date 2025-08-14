@@ -62,9 +62,10 @@ def main():
     X = np.load(args.features)["X"].astype(np.float32)   # (N, D)
     N, D = X.shape
     ckpt = torch.load(args.ckpt, map_location="cpu")
-    enc = MLPEncoder(in_dim=ckpt["config"]["in_dim"],
-                     emb_dim=ckpt["config"]["emb_dim"],
-                     hidden=ckpt["config"]["hidden"])
+    cfg = ckpt["config"]  # Extract config for later use
+    enc = MLPEncoder(in_dim=cfg["in_dim"],
+                     emb_dim=cfg["emb_dim"],
+                     hidden=cfg["hidden"])
     enc.load_state_dict(ckpt["state_dict"]); enc.eval()
 
     # Context targets (order matters)
@@ -110,6 +111,13 @@ def main():
     # Encode NEW statement
     base, tri, head = featurize_type(args.type_string, buckets=args.buckets)
     x_new = np.concatenate([base, tri, head]).astype(np.float32)
+    
+    # Check if we need to pad features to match model dimensions
+    if x_new.shape[0] < cfg["in_dim"]:
+        # Model was trained on combined features, prepend zeros for structural features
+        padding = cfg["in_dim"] - x_new.shape[0]
+        x_new = np.concatenate([np.zeros(padding, dtype=np.float32), x_new])
+    
     with torch.no_grad():
         z = enc(torch.from_numpy(x_new).unsqueeze(0)).cpu().numpy()[0]  # (d,)
 

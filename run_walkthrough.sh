@@ -28,7 +28,7 @@ K_LIST="${K_LIST:-10,20,50}"
 TARGET_KINDS="${TARGET_KINDS:-theorem,lemma}"
 TARGET_PREFIXES="${TARGET_PREFIXES:-TopologicalSpace.}"
 
-# Optional graph pipeline toggles
+# Optional pipeline toggles
 DO_GRAPH="${DO_GRAPH:-0}"     # 1 to build graph + metrics + (optional) GNN
 DO_ATTACH="${DO_ATTACH:-0}"   # 1 to reweight rankings and distill text productivity
 
@@ -95,6 +95,9 @@ META="$PROC_DIR/meta.json"
 DECLTYPES_TXT="$DATA_DIR/declaration_types.txt"
 DECLTYPES="$PROC_DIR/decltypes.parquet"
 TYPE_FEATS="$PROC_DIR/type_features.npz"
+STRUCT_JSONL="$DATA_DIR/declaration_structures.jsonl"
+STRUCTURES="$PROC_DIR/structures.parquet"
+STRUCT_FEATS="$PROC_DIR/structure_features.npz"
 TEXT_CKPT="$OUT_DIR/text_ranker.pt"
 RANKINGS="$PROC_DIR/rankings.parquet"
 RANKINGS_EXPLAINED="$PROC_DIR/rankings_explained.csv"
@@ -108,6 +111,10 @@ GNN_SCORES="$PROC_DIR/gnn_productivity.parquet"
 RANKINGS_REWEIGHTED="$PROC_DIR/rankings_reweighted.parquet"
 RANKINGS_REWEIGHTED_EXPLAINED="$PROC_DIR/rankings_reweighted_explained.csv"
 TEXT_PROD_CKPT="$OUT_DIR/text_prod.pt"
+
+# Use-cost model outputs
+USE_COST_CKPT="$OUT_DIR/use_cost_model.pt"
+STRUCTURES_WITH_COST="$PROC_DIR/structures_with_learned_cost.parquet"
 
 # What-if outputs
 WHATIF_JSON="$PROC_DIR/whatif.json"
@@ -134,6 +141,20 @@ maybe_run "2b) Build type features" "$TYPE_FEATS" \
     --nodes "$NODES" \
     --out "$TYPE_FEATS" \
     --buckets "$BUCKETS"
+
+# 2c) Build combined structural+text features
+maybe_run "2c) Build combined structural+text features" "$STRUCT_FEATS" \
+  "$PYTHON_BIN" src/build_declaration_structures.py \
+    --nodes "$NODES" \
+    --structures-jsonl "$STRUCT_JSONL" \
+    --out-structures "$STRUCTURES" \
+    --out-features "$STRUCT_FEATS" \
+    --buckets "$BUCKETS" \
+    --combine-with-text \
+    --text-features "$TYPE_FEATS"
+
+# Always use structural features for everything
+TYPE_FEATS="$STRUCT_FEATS"
 
 # 3) Train text ranker
 maybe_run "3) Train text ranker" "$TEXT_CKPT" \
@@ -238,6 +259,27 @@ if [[ "$DO_WHATIF" == "1" ]]; then
         --alpha "$WHATIF_ALPHA" --gamma "$WHATIF_GAMMA"
   fi
 
+  # Train use-cost model if we have graph metrics and structures
+  if [[ -f "$GRAPH_METRICS" && -f "$STRUCTURES" ]]; then
+    maybe_run "U) Train use-cost model from usage patterns" "$USE_COST_CKPT" \
+      "$PYTHON_BIN" -m src.tasks.train_use_cost_model \
+        --structures "$STRUCTURES" \
+        --graph_metrics "$GRAPH_METRICS" \
+        --out_ckpt "$USE_COST_CKPT" \
+        --epochs 30 --batch_size 256 --lr 1e-3
+
+    maybe_run "U2) Score learned use-cost" "$STRUCTURES_WITH_COST" \
+      "$PYTHON_BIN" -m src.tasks.score_use_cost \
+        --structures "$STRUCTURES" \
+        --ckpt "$USE_COST_CKPT" \
+        --out "$STRUCTURES_WITH_COST"
+    
+    # Use learned cost in what-if
+    STRUCTURES_FOR_WHATIF="$STRUCTURES_WITH_COST"
+  else
+    STRUCTURES_FOR_WHATIF="$STRUCTURES"
+  fi
+
   # Assemble optional use_model args
   WHATIF_ARGS=()
   if [[ "$WHATIF_USE_MODEL" == "1" ]]; then
@@ -246,6 +288,12 @@ if [[ "$DO_WHATIF" == "1" ]]; then
   # Graph metrics are optional (for percentile)
   if [[ -f "$GRAPH_METRICS" ]]; then
     WHATIF_ARGS+=(--graph_metrics "$GRAPH_METRICS")
+  fi
+  # Structures are optional (for sophisticated use-cost)
+  if [[ -f "$STRUCTURES_FOR_WHATIF" ]]; then
+    WHATIF_ARGS+=(--structures "$STRUCTURES_FOR_WHATIF")
+  elif [[ -f "$STRUCTURES" ]]; then
+    WHATIF_ARGS+=(--structures "$STRUCTURES")
   fi
 
   run_step "W) What-if report" \
