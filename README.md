@@ -36,6 +36,16 @@ Generated from the `lean-training data` submodule.
 - `data/declaration_types.txt` (output of `lake exe declaration_types Mathlib`)
 - `data/declaration_structures.jsonl` (output of `lake exe declaration_structures Mathlib`)
 
+```bash
+mkdir -p data
+cd lean-training-data
+lake exe cache get
+lake exe premises Mathlib >../data/premises.txt
+lake exe declaration_types Mathlib >../data/declaration_types.txt
+lake exe declaration_structures Mathlib >../data/declaration_structures.jsonl
+cd ..
+```
+
 ## Run
 
 ```bash
