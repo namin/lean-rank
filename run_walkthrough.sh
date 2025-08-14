@@ -95,6 +95,9 @@ META="$PROC_DIR/meta.json"
 DECLTYPES_TXT="$DATA_DIR/declaration_types.txt"
 DECLTYPES="$PROC_DIR/decltypes.parquet"
 TYPE_FEATS="$PROC_DIR/type_features.npz"
+STRUCT_JSONL="$DATA_DIR/declaration_structures.jsonl"
+STRUCTURES="$PROC_DIR/structures.parquet"
+STRUCT_FEATS="$PROC_DIR/structure_features.npz"
 TEXT_CKPT="$OUT_DIR/text_ranker.pt"
 RANKINGS="$PROC_DIR/rankings.parquet"
 RANKINGS_EXPLAINED="$PROC_DIR/rankings_explained.csv"
@@ -134,6 +137,24 @@ maybe_run "2b) Build type features" "$TYPE_FEATS" \
     --nodes "$NODES" \
     --out "$TYPE_FEATS" \
     --buckets "$BUCKETS"
+
+# 2c) Build structured features (optional but recommended for use-cost)
+USE_STRUCT_FEATS="${USE_STRUCT_FEATS:-1}"
+if [[ "$USE_STRUCT_FEATS" == "1" ]]; then
+  maybe_run "2c) Build structured features" "$STRUCT_FEATS" \
+    "$PYTHON_BIN" src/build_declaration_structures.py \
+      --nodes "$NODES" \
+      --structures-jsonl "$STRUCT_JSONL" \
+      --out-structures "$STRUCTURES" \
+      --out-features "$STRUCT_FEATS" \
+      --buckets "$BUCKETS"
+  
+  # NOTE: We keep using TYPE_FEATS for the model since it was trained on those dimensions
+  # STRUCT_FEATS and STRUCTURES are used for use-cost calculation in what-if analysis
+  if [[ -f "$STRUCTURES" ]]; then
+    say "Structured features available for use-cost analysis"
+  fi
+fi
 
 # 3) Train text ranker
 maybe_run "3) Train text ranker" "$TEXT_CKPT" \
@@ -246,6 +267,10 @@ if [[ "$DO_WHATIF" == "1" ]]; then
   # Graph metrics are optional (for percentile)
   if [[ -f "$GRAPH_METRICS" ]]; then
     WHATIF_ARGS+=(--graph_metrics "$GRAPH_METRICS")
+  fi
+  # Structures are optional (for sophisticated use-cost)
+  if [[ -f "$STRUCTURES" ]]; then
+    WHATIF_ARGS+=(--structures "$STRUCTURES")
   fi
 
   run_step "W) What-if report" \

@@ -30,9 +30,35 @@ def _load_edge_index(edge_path: Path, num_nodes: int) -> Tuple[np.ndarray, np.nd
     col_idx = dst
     return row_ptr, col_idx, out_deg
 
-def _count_use_cost(type_string: str) -> int:
-    # Simple "use-cost": count implication arrows and foralls (rough hypothesis proxy)
-    return type_string.count("→") + type_string.count("∀")
+def _count_use_cost(type_string: str) -> float:
+    # Simple fallback "use-cost": count implication arrows and foralls (rough hypothesis proxy)
+    return float(type_string.count("→") + type_string.count("∀"))
+
+def _compute_use_cost_from_structure(structure: pd.Series) -> float:
+    """Compute sophisticated use-cost from parsed structure."""
+    
+    # Basic premise burden
+    premise_cost = (
+        structure.get('num_explicit_premises', 0) + 
+        structure.get('num_typeclass_constraints', 0) * 0.5
+    )
+    
+    # Nesting complexity
+    nesting_penalty = np.log1p(structure.get('max_nesting_depth', 0))
+    
+    # Namespace specificity (deeper = more specialized)
+    specificity = np.log1p(max(0, structure.get('namespace_depth', 0) - 2))
+    
+    # Classical logic makes it less constructive
+    classical_penalty = 0.3 if structure.get('uses_classical', False) else 0
+    
+    # Polymorphism makes it more reusable
+    polymorphism_bonus = 0.5 if structure.get('is_polymorphic', False) else 0
+    
+    return max(0.1, 
+        1.0 + premise_cost + nesting_penalty + 
+        specificity + classical_penalty - polymorphism_bonus
+    )
 
 def _featurize_new_type(type_string: str, buckets: int) -> np.ndarray:
     base, tri, head = featurize_type(type_string, buckets=buckets)
@@ -196,7 +222,7 @@ def _write_markdown_report(out_path: Path,
                            type_string: str,
                            L: int, K: int, beta: float,
                            total_mass: float,
-                           use_cost: int,
+                           use_cost: float,
                            alpha: float, gamma: float,
                            prod_whatif: float,
                            attach_names: List[str],
@@ -253,6 +279,7 @@ def main():
     ap.add_argument("--target_prefixes", default="")
     ap.add_argument("--use_model", action="store_true")
     ap.add_argument("--graph_metrics", default="")
+    ap.add_argument("--structures", default="", help="Path to structures.parquet for sophisticated use-cost")
     ap.add_argument("--out_json", default="")
     ap.add_argument("--report_md", default="", help="optional: write a Markdown report (path). If empty and --out_json is set, will write alongside as .md")
     args = ap.parse_args()
@@ -302,11 +329,26 @@ def main():
     top_idx = np.argpartition(-sims, L-1)[:L]
     top_sorted = top_idx[np.argsort(-sims[top_idx])]
     attach_targets = target_ids[top_sorted]
+    attached_target_ids = attach_targets  # Define the variable properly
     attach_scores = sims[top_sorted]
 
     total_mass, (infl_ids, infl_vals), per_hop = katz_mass_frontier(row_ptr, col_idx, attach_targets, K=args.K, beta=args.beta)
 
-    use_cost = _count_use_cost(args.type_string)
+    # Load structures if available for better use-cost calculation
+    if args.structures and Path(args.structures).exists():
+        structures = pd.read_parquet(args.structures)
+        # For now, estimate use-cost from similar declarations (top attached targets)
+        # In the future, we could run Lean to parse the new type string directly
+        similar_structs = structures[structures['id'].isin(attached_target_ids[:min(10, len(attached_target_ids))])]
+        if not similar_structs.empty:
+            # Use median use-cost from similar declarations
+            use_cost = similar_structs['use_cost'].median() if 'use_cost' in similar_structs.columns else _count_use_cost(args.type_string)
+            print(f"[whatif] Using sophisticated use-cost from similar declarations: {use_cost:.2f}")
+        else:
+            use_cost = _count_use_cost(args.type_string)
+    else:
+        use_cost = _count_use_cost(args.type_string)
+    
     prod_whatif = math.log1p((L + args.alpha * total_mass) / ((1 + use_cost) ** args.gamma))
 
     print(f"[whatif] candidates after filtering: {target_ids.size}  | attached L={L}")
@@ -317,7 +359,10 @@ def main():
         print(f"  - {nm}  {attach_scores[i]:.6f}")
     print("[whatif] per-hop mass: " + ", ".join([f"k={k}: {m:.1f}" for (k, m) in per_hop]))
     print(f"[whatif] total Katz mass (K={args.K}, beta={args.beta}): {total_mass:.2f}")
-    print(f"[whatif] use-cost (rough hyp_count+forall): {use_cost}")
+    if args.structures and Path(args.structures).exists():
+        print(f"[whatif] use-cost: {use_cost:.2f}")
+    else:
+        print(f"[whatif] use-cost (rough hyp_count+forall): {use_cost:.0f}")
     print(f"[whatif] prod_whatif (alpha={args.alpha}, gamma={args.gamma}): {prod_whatif:.6f}")
 
     pct = None
@@ -359,7 +404,7 @@ def main():
             "attach_scores": [float(s) for s in attach_scores[:L].tolist()],
             "per_hop": [{"k": int(k), "mass": float(m)} for (k, m) in per_hop],
             "total_mass": float(total_mass),
-            "use_cost": int(use_cost),
+            "use_cost": float(use_cost),
             "prod_whatif": float(prod_whatif),
             "percentile": pct,
             "percentile_col": matched_col,
@@ -385,7 +430,7 @@ def main():
                 type_string=args.type_string,
                 L=int(L), K=int(args.K), beta=float(args.beta),
                 total_mass=float(total_mass),
-                use_cost=int(use_cost),
+                use_cost=use_cost,
                 alpha=float(args.alpha), gamma=float(args.gamma),
                 prod_whatif=float(prod_whatif),
                 attach_names=attach_names,
