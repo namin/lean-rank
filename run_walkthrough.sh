@@ -31,6 +31,7 @@ TARGET_PREFIXES="${TARGET_PREFIXES:-}"
 # Optional pipeline toggles
 DO_GRAPH="${DO_GRAPH:-0}"     # 1 to build graph + metrics + (optional) GNN
 DO_ATTACH="${DO_ATTACH:-0}"   # 1 to reweight rankings and distill text productivity
+DO_HYPOTHESIS="${DO_HYPOTHESIS:-0}"  # 1 to generate hypothesis embeddings for analysis
 
 # New: optional What-if productivity report (Markdown)
 DO_WHATIF="${DO_WHATIF:-1}"
@@ -375,6 +376,49 @@ if [[ "$DO_SEMANTIC" == "1" ]]; then
   say "  - High-productivity 'anchor' theorems"
   say "  - Productivity clusters in embedding space"
   say "  - Predicted productivity based on similarity to existing theorems"
+fi
+
+# --------------------------- Optional: Hypothesis Embeddings --------------------------
+# Generate embeddings of theorem hypothesis patterns for research and analysis.
+# Note: These don't improve premise selection (correlation ~0.01) but are useful
+# for exploring theorem structure and understanding predicate relationships.
+if [[ "$DO_HYPOTHESIS" == "1" ]]; then
+  say "---- Optional hypothesis embeddings and analysis ----"
+  
+  HYPOTHESIS_EMB="$DATA_DIR/hypothesis_embeddings.pkl"
+  HYPOTHESIS_CLUSTERS="$PROC_DIR/hypothesis_clusters.txt"
+  
+  # Generate embeddings
+  maybe_run "H1) Generate hypothesis embeddings" "$HYPOTHESIS_EMB" \
+    "$PYTHON_BIN" -m src.tasks.hypothesis_embeddings \
+      --jsonl "$STRUCT_JSONL"
+  
+  # Analyze patterns and create clusters
+  if [[ "$FORCE" == "1" || ! -f "$HYPOTHESIS_CLUSTERS" ]]; then
+    say "H2) Analyze hypothesis patterns"
+    "$PYTHON_BIN" -m src.tasks.analyze_hypothesis_patterns \
+      --jsonl "$STRUCT_JSONL" \
+      --clusters 10 \
+      > "$HYPOTHESIS_CLUSTERS" 2>&1
+  else
+    say "H2) Analyze hypothesis patterns [skip] $HYPOTHESIS_CLUSTERS exists (use FORCE=1 to rebuild)"
+  fi
+  
+  if [[ -f "$HYPOTHESIS_EMB" ]]; then
+    say "Hypothesis embeddings saved to $HYPOTHESIS_EMB"
+  fi
+  
+  if [[ -f "$HYPOTHESIS_CLUSTERS" ]]; then
+    say "Hypothesis clustering analysis saved to $HYPOTHESIS_CLUSTERS"
+    # Show summary of clusters
+    echo "  Cluster summary (first 3 clusters):"
+    grep "^--- Cluster" "$HYPOTHESIS_CLUSTERS" 2>/dev/null | head -3 | sed 's/^/    /'
+    echo "  Top overall predicates:"
+    grep -A 3 "^Top 20 predicates:" "$HYPOTHESIS_CLUSTERS" 2>/dev/null | tail -3 | sed 's/^/    /'
+  fi
+  
+  say "These can be used for theorem structure analysis and research"
+  say "Note: Analysis shows weak correlation with premise usage (see docs)"
 fi
 
 echo ""
