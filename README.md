@@ -48,6 +48,8 @@ cd ..
 
 ## Run
 
+### Full Dataset
+
 ```bash
 # Standard run (builds everything needed)
 ./run_walkthrough.sh
@@ -62,11 +64,41 @@ The pipeline automatically:
 3. Trains model
 4. Calculates use-cost for what-if analysis
 
+### Domain-Specific Analysis
+
+```bash
+# Run complete pipeline for a specific mathematical domain
+./run_domain.sh number_theory
+
+# Available domains: number_theory, topology, algebra, analysis, category_theory, order
+```
+
+The domain script automatically:
+1. Filters the dataset to your chosen domain
+2. Runs the complete pipeline on filtered data
+3. Produces domain-specific models and analysis
+
 ## Documentation
 
 - [DESIGN.md](DESIGN.md) - System architecture and rationale
 - [STEPS.md](STEPS.md) - Detailed step-by-step walkthrough
 - [lean-training-data/README.md](lean-training-data/README.md#declaration_structures) - Includes documentation for our `declaration_structures` tool
+
+## Domain Filtering
+
+Filter the dataset to specific mathematical domains for focused analysis:
+
+```bash
+# Filter to number theory (only dependencies within the domain)
+python -m src.tasks.filter_domain --domain number_theory
+
+# Available domains: number_theory, topology, algebra, analysis, category_theory, order
+
+# Custom domain with your own patterns
+python -m src.tasks.filter_domain --patterns "Measure,Integral,Lp" --output data/measure_theory
+```
+
+The filtering only tracks dependencies between theorems in your domain, eliminating noise from general infrastructure like `Eq`, `congrArg`, etc. This gives realistic productivity metrics for domain-specific analysis.
 
 ## Analysis Tools
 

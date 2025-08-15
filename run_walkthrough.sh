@@ -26,7 +26,7 @@ CHUNK="${CHUNK:-128000}"   # contexts chunk for scoring
 # Productivity evaluation
 K_LIST="${K_LIST:-10,20,50}"
 TARGET_KINDS="${TARGET_KINDS:-theorem,lemma}"
-TARGET_PREFIXES="${TARGET_PREFIXES:-TopologicalSpace.}"
+TARGET_PREFIXES="${TARGET_PREFIXES:-}"
 
 # Optional pipeline toggles
 DO_GRAPH="${DO_GRAPH:-0}"     # 1 to build graph + metrics + (optional) GNN
