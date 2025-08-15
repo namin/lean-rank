@@ -313,6 +313,9 @@ def main():
                        choices=["summary", "metric1", "metric2", "metric3", "quantifiers", "correlations", "all"],
                        default=["all"],
                        help="Which sections to include in report")
+    parser.add_argument("--format", choices=["text", "markdown"], default="text",
+                       help="Output format (text or markdown)")
+    parser.add_argument("--output", help="Output file (if not specified, prints to stdout)")
     args = parser.parse_args()
     
     # Load data
