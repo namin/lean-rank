@@ -156,4 +156,56 @@ Key insights from this analysis:
 - Reveals that structural complexity alone poorly predicts productivity (R² ≈ 0.02)
 - High-productivity theorems have MORE arrows but FEWER universal quantifiers
 
+### Explicit Theorem Importance Metrics
+
+Compute interpretable importance metrics for theorems based on dependency analysis:
+
+```bash
+# Compute explicit metrics with full transitive closure
+python -m src.tasks.compute_explicit_metrics
+
+# Generate markdown report for sharing
+python -m src.tasks.compute_explicit_metrics --top_n 50 --format markdown
+
+# Generate unified table format (all metrics in one table, sorted by combined score)
+python -m src.tasks.compute_explicit_metrics --unified-table --top_n 100
+
+# Force recomputation (ignore cache)
+python -m src.tasks.compute_explicit_metrics --force
+
+# Use different data directory
+python -m src.tasks.compute_explicit_metrics --data_dir data/number_theory_filtered
+
+# Full example: unified table with statements for top 50 theorems
+python -m src.tasks.compute_explicit_metrics \
+  --data_dir data/number_theory_filtered \
+  --unified-table \
+  --top_n 50 \
+  --output_md outputs/important_theorems.md
+
+# Control statement truncation (default: 100 chars, 0 for no limit)
+python -m src.tasks.compute_explicit_metrics \
+  --unified-table \
+  --top_n 20 \
+  --statement-length 200  # Show up to 200 characters
+
+# Show full statements without truncation
+python -m src.tasks.compute_explicit_metrics \
+  --unified-table \
+  --statement-length 0
+```
+
+This computes three explainable metrics:
+1. **Direct Usage Count**: How many theorems directly call this theorem
+2. **Transitive Dependencies**: Full transitive closure of theorems that depend on this one
+3. **Combined Score**: `(direct × transitive) / (existential_quantifiers + 1)`
+
+Key insights from this analysis:
+- Foundational theorems (e.g., `Nat.gcd_rec`, `Nat.mod_lt`) have high transitive impact
+- Utility theorems (e.g., `Pell.matiyasevic`) have high direct usage
+- Only 14.7% of theorems have zero direct usage
+- Theorems with existential quantifiers tend to be more specialized
+
+The transitive closure computation is cached for efficiency (16s → <1s on subsequent runs).
+
 
