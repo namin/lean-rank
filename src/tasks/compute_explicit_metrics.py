@@ -267,7 +267,7 @@ def generate_text_report(df, top_n=20):
     print("\n" + "=" * 80)
 
 
-def load_theorem_statements(data_dir):
+def load_theorem_statements(data_dir, max_length=None):
     """Load theorem statements from declaration_types.txt."""
     statements = {}
     types_file = f"{data_dir}/declaration_types.txt"
@@ -289,14 +289,15 @@ def load_theorem_statements(data_dir):
                     
                     # Clean up the type string for display
                     type_str = type_str.replace("\n", " ").strip()
-                    # Truncate very long statements
-                    if len(type_str) > 200:
-                        type_str = type_str[:197] + "..."
+                    # Truncate if requested
+                    if max_length and len(type_str) > max_length:
+                        type_str = type_str[:max_length-3] + "..."
                     statements[name] = type_str
     return statements
 
 
-def generate_markdown_report(df, output_file, top_n=20, unified_table=False, data_dir=None):
+def generate_markdown_report(df, output_file, top_n=20, unified_table=False, data_dir=None, 
+                           statement_length=100):
     """Generate markdown report for sharing."""
     
     lines = []
@@ -309,7 +310,8 @@ def generate_markdown_report(df, output_file, top_n=20, unified_table=False, dat
         # Load theorem statements if available
         statements = {}
         if data_dir:
-            statements = load_theorem_statements(data_dir)
+            # Load without truncation initially
+            statements = load_theorem_statements(data_dir, max_length=None)
         
         # Generate unified table sorted by combined metric
         lines.append("## Unified Ranking Table")
@@ -329,9 +331,9 @@ def generate_markdown_report(df, output_file, top_n=20, unified_table=False, dat
             if statement:
                 # Escape pipes in statements for markdown tables
                 statement = statement.replace("|", "\\|")
-                # Further truncate for table display
-                if len(statement) > 100:
-                    statement = statement[:97] + "..."
+                # Truncate for table display if needed
+                if statement_length and len(statement) > statement_length:
+                    statement = statement[:statement_length-3] + "..."
             
             lines.append(f"| {i} | {row['metric3_combined']:.1f} | {row['metric1_direct_usage']:.0f} | "
                         f"{row['metric2_transitive_deps']:.0f} | {exists_str} | `{theorem_name}` | {statement} |")
@@ -438,6 +440,8 @@ def main():
                        help="Force recomputation (ignore cache)")
     parser.add_argument("--unified-table", action="store_true",
                        help="Generate unified table format (markdown only)")
+    parser.add_argument("--statement-length", type=int, default=100,
+                       help="Maximum length for theorem statements in table (0 for no limit)")
     args = parser.parse_args()
     
     # Handle cache invalidation
@@ -461,9 +465,11 @@ def main():
         generate_text_report(df, args.top_n)
     
     if args.format in ["markdown", "both"]:
+        statement_length = args.statement_length if args.statement_length > 0 else None
         generate_markdown_report(df, args.output_md, args.top_n, 
                                unified_table=args.unified_table,
-                               data_dir=args.data_dir)
+                               data_dir=args.data_dir,
+                               statement_length=statement_length)
     
     print("\nAnalysis complete!")
     print(f"Total theorems analyzed: {len(df)}")

@@ -182,6 +182,17 @@ python -m src.tasks.compute_explicit_metrics \
   --unified-table \
   --top_n 50 \
   --output_md outputs/important_theorems.md
+
+# Control statement truncation (default: 100 chars, 0 for no limit)
+python -m src.tasks.compute_explicit_metrics \
+  --unified-table \
+  --top_n 20 \
+  --statement-length 200  # Show up to 200 characters
+
+# Show full statements without truncation
+python -m src.tasks.compute_explicit_metrics \
+  --unified-table \
+  --statement-length 0
 ```
 
 This computes three explainable metrics:
