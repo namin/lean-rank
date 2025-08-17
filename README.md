@@ -156,4 +156,35 @@ Key insights from this analysis:
 - Reveals that structural complexity alone poorly predicts productivity (R² ≈ 0.02)
 - High-productivity theorems have MORE arrows but FEWER universal quantifiers
 
+### Explicit Theorem Importance Metrics
+
+Compute interpretable importance metrics for theorems based on dependency analysis:
+
+```bash
+# Compute explicit metrics with full transitive closure
+python -m src.tasks.compute_explicit_metrics
+
+# Generate markdown report for sharing
+python -m src.tasks.compute_explicit_metrics --top_n 50 --format markdown
+
+# Force recomputation (ignore cache)
+python -m src.tasks.compute_explicit_metrics --force
+
+# Use different data directory
+python -m src.tasks.compute_explicit_metrics --data_dir data/number_theory_filtered
+```
+
+This computes three explainable metrics:
+1. **Direct Usage Count**: How many theorems directly call this theorem
+2. **Transitive Dependencies**: Full transitive closure of theorems that depend on this one
+3. **Combined Score**: `(direct × transitive) / (existential_quantifiers + 1)`
+
+Key insights from this analysis:
+- Foundational theorems (e.g., `Nat.gcd_rec`, `Nat.mod_lt`) have high transitive impact
+- Utility theorems (e.g., `Pell.matiyasevic`) have high direct usage
+- Only 14.7% of theorems have zero direct usage
+- Theorems with existential quantifiers tend to be more specialized
+
+The transitive closure computation is cached for efficiency (16s → <1s on subsequent runs).
+
 
