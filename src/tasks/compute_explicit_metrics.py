@@ -267,7 +267,36 @@ def generate_text_report(df, top_n=20):
     print("\n" + "=" * 80)
 
 
-def generate_markdown_report(df, output_file, top_n=20):
+def load_theorem_statements(data_dir):
+    """Load theorem statements from declaration_types.txt."""
+    statements = {}
+    types_file = f"{data_dir}/declaration_types.txt"
+    
+    if Path(types_file).exists():
+        with open(types_file, "r", encoding="utf-8") as f:
+            content = f.read()
+            # Split by separator
+            declarations = content.split("---\n")
+            
+            for decl in declarations:
+                if not decl.strip():
+                    continue
+                lines = decl.strip().split("\n")
+                if len(lines) >= 3:
+                    # kind = lines[0]  # theorem, definition, etc.
+                    name = lines[1]
+                    type_str = " ".join(lines[2:])  # Join multi-line types
+                    
+                    # Clean up the type string for display
+                    type_str = type_str.replace("\n", " ").strip()
+                    # Truncate very long statements
+                    if len(type_str) > 200:
+                        type_str = type_str[:197] + "..."
+                    statements[name] = type_str
+    return statements
+
+
+def generate_markdown_report(df, output_file, top_n=20, unified_table=False, data_dir=None):
     """Generate markdown report for sharing."""
     
     lines = []
@@ -276,60 +305,115 @@ def generate_markdown_report(df, output_file, top_n=20):
     lines.append(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}*")
     lines.append("")
     
-    # Summary
-    lines.append("## Summary")
-    lines.append("")
-    lines.append(f"- **Total theorems analyzed**: {len(df)}")
-    lines.append(f"- **Theorems with zero usage**: {(df['metric1_direct_usage'] == 0).sum()} ({(df['metric1_direct_usage'] == 0).mean()*100:.1f}%)")
-    lines.append(f"- **Theorems with existential quantifiers**: {(df['num_exists'] > 0).sum()} ({(df['num_exists'] > 0).mean()*100:.1f}%)")
-    lines.append("")
+    if unified_table:
+        # Load theorem statements if available
+        statements = {}
+        if data_dir:
+            statements = load_theorem_statements(data_dir)
+        
+        # Generate unified table sorted by combined metric
+        lines.append("## Unified Ranking Table")
+        lines.append("")
+        lines.append("Sorted by Combined Score (most important first)")
+        lines.append("")
+        lines.append("| Rank | Combined Score | Direct Usage | Transitive Deps | ∃ | Theorem | Statement |")
+        lines.append("|------|----------------|--------------|-----------------|---|---------|-----------|")
+        
+        top_df = df.nlargest(min(top_n, len(df)), "metric3_combined")
+        for i, (idx, row) in enumerate(top_df.iterrows(), 1):
+            exists_str = str(int(row['num_exists'])) if row['num_exists'] > 0 else "-"
+            theorem_name = row['name']
+            
+            # Get statement if available
+            statement = statements.get(theorem_name, "")
+            if statement:
+                # Escape pipes in statements for markdown tables
+                statement = statement.replace("|", "\\|")
+                # Further truncate for table display
+                if len(statement) > 100:
+                    statement = statement[:97] + "..."
+            
+            lines.append(f"| {i} | {row['metric3_combined']:.1f} | {row['metric1_direct_usage']:.0f} | "
+                        f"{row['metric2_transitive_deps']:.0f} | {exists_str} | `{theorem_name}` | {statement} |")
+        
+        lines.append("")
+        lines.append("### Metric Explanations")
+        lines.append("")
+        lines.append("- **Combined Score**: `(direct × transitive) / (∃ + 1)` - Overall importance metric")
+        lines.append("- **Direct Usage**: Number of theorems that directly call this theorem")
+        lines.append("- **Transitive Deps**: Number of theorems that depend on this (full closure)")
+        lines.append("- **∃**: Count of existential quantifiers in the statement")
+        lines.append("")
+        
+        # Add summary statistics
+        lines.append("### Summary Statistics")
+        lines.append("")
+        lines.append(f"- Total theorems analyzed: {len(df)}")
+        lines.append(f"- Theorems with zero direct usage: {(df['metric1_direct_usage'] == 0).sum()} "
+                    f"({(df['metric1_direct_usage'] == 0).mean()*100:.1f}%)")
+        lines.append(f"- Average direct usage: {df['metric1_direct_usage'].mean():.2f}")
+        lines.append(f"- Average transitive dependencies: {df['metric2_transitive_deps'].mean():.2f}")
+        lines.append("")
+        
+        lines.append("---")
+        lines.append("*All metrics are explainable and can be manually verified.*")
+        
+    else:
+        # Original multi-section format
+        # Summary
+        lines.append("## Summary")
+        lines.append("")
+        lines.append(f"- **Total theorems analyzed**: {len(df)}")
+        lines.append(f"- **Theorems with zero usage**: {(df['metric1_direct_usage'] == 0).sum()} ({(df['metric1_direct_usage'] == 0).mean()*100:.1f}%)")
+        lines.append(f"- **Theorems with existential quantifiers**: {(df['num_exists'] > 0).sum()} ({(df['num_exists'] > 0).mean()*100:.1f}%)")
+        lines.append("")
     
-    # Top theorems by each metric
-    lines.append("## Top Theorems by Each Metric")
-    lines.append("")
-    
-    lines.append("### Metric 1: Direct Usage Count")
-    lines.append("")
-    lines.append("| Rank | Uses | Theorem |")
-    lines.append("|------|------|---------|")
-    
-    top_direct = df.nlargest(min(top_n, len(df)), "metric1_direct_usage")
-    for i, (idx, row) in enumerate(top_direct.iterrows(), 1):
-        lines.append(f"| {i} | {row['metric1_direct_usage']:.0f} | `{row['name']}` |")
-    
-    lines.append("")
-    lines.append("### Metric 2: Transitive Dependencies (Full Closure)")
-    lines.append("")
-    lines.append("| Rank | Dependencies | Theorem |")
-    lines.append("|------|--------------|---------|")
-    
-    top_trans = df.nlargest(min(top_n, len(df)), "metric2_transitive_deps")
-    for i, (idx, row) in enumerate(top_trans.iterrows(), 1):
-        lines.append(f"| {i} | {row['metric2_transitive_deps']:.0f} | `{row['name']}` |")
-    
-    lines.append("")
-    lines.append("### Metric 3: Combined Weighted Score")
-    lines.append("")
-    lines.append("**Formula**: `(direct_usage × transitive_deps) / (existential_quantifiers + 1)`")
-    lines.append("")
-    lines.append("| Rank | Score | Direct | Transitive | ∃ | Theorem |")
-    lines.append("|------|-------|--------|------------|---|---------|")
-    
-    top_combined = df.nlargest(min(top_n, len(df)), "metric3_combined")
-    for i, (idx, row) in enumerate(top_combined.iterrows(), 1):
-        exists_str = str(int(row['num_exists'])) if row['num_exists'] > 0 else "-"
-        lines.append(f"| {i} | {row['metric3_combined']:.1f} | {row['metric1_direct_usage']:.0f} | {row['metric2_transitive_deps']:.0f} | {exists_str} | `{row['name']}` |")
-    
-    lines.append("")
-    lines.append("## Methodology")
-    lines.append("")
-    lines.append("All metrics are explicit and can be manually verified:")
-    lines.append("1. **Direct usage**: Count theorems where this appears in premises")
-    lines.append("2. **Transitive dependencies**: Full transitive closure of dependency graph")
-    lines.append("3. **Combined score**: Balances both metrics, penalizes complex statements")
-    lines.append("")
-    lines.append("---")
-    lines.append("*Generated using explainable metrics as suggested by domain expert.*")
+        # Top theorems by each metric
+        lines.append("## Top Theorems by Each Metric")
+        lines.append("")
+        
+        lines.append("### Metric 1: Direct Usage Count")
+        lines.append("")
+        lines.append("| Rank | Uses | Theorem |")
+        lines.append("|------|------|---------|")
+        
+        top_direct = df.nlargest(min(top_n, len(df)), "metric1_direct_usage")
+        for i, (idx, row) in enumerate(top_direct.iterrows(), 1):
+            lines.append(f"| {i} | {row['metric1_direct_usage']:.0f} | `{row['name']}` |")
+        
+        lines.append("")
+        lines.append("### Metric 2: Transitive Dependencies (Full Closure)")
+        lines.append("")
+        lines.append("| Rank | Dependencies | Theorem |")
+        lines.append("|------|--------------|---------|")
+        
+        top_trans = df.nlargest(min(top_n, len(df)), "metric2_transitive_deps")
+        for i, (idx, row) in enumerate(top_trans.iterrows(), 1):
+            lines.append(f"| {i} | {row['metric2_transitive_deps']:.0f} | `{row['name']}` |")
+        
+        lines.append("")
+        lines.append("### Metric 3: Combined Weighted Score")
+        lines.append("")
+        lines.append("**Formula**: `(direct_usage × transitive_deps) / (existential_quantifiers + 1)`")
+        lines.append("")
+        lines.append("| Rank | Score | Direct | Transitive | ∃ | Theorem |")
+        lines.append("|------|-------|--------|------------|---|---------|")
+        
+        top_combined = df.nlargest(min(top_n, len(df)), "metric3_combined")
+        for i, (idx, row) in enumerate(top_combined.iterrows(), 1):
+            exists_str = str(int(row['num_exists'])) if row['num_exists'] > 0 else "-"
+            lines.append(f"| {i} | {row['metric3_combined']:.1f} | {row['metric1_direct_usage']:.0f} | {row['metric2_transitive_deps']:.0f} | {exists_str} | `{row['name']}` |")
+        
+        lines.append("")
+        lines.append("## Methodology")
+        lines.append("")
+        lines.append("All metrics are explicit and can be manually verified:")
+        lines.append("1. **Direct usage**: Count theorems where this appears in premises")
+        lines.append("2. **Transitive dependencies**: Full transitive closure of dependency graph")
+        lines.append("3. **Combined score**: Balances both metrics, penalizes complex statements")
+        lines.append("")
+        lines.append("---")
+        lines.append("*Generated using explainable metrics as suggested by domain expert.*")
     
     # Write to file
     with open(output_file, "w") as f:
@@ -352,6 +436,8 @@ def main():
                        help="Output format")
     parser.add_argument("--force", action="store_true",
                        help="Force recomputation (ignore cache)")
+    parser.add_argument("--unified-table", action="store_true",
+                       help="Generate unified table format (markdown only)")
     args = parser.parse_args()
     
     # Handle cache invalidation
@@ -375,7 +461,9 @@ def main():
         generate_text_report(df, args.top_n)
     
     if args.format in ["markdown", "both"]:
-        generate_markdown_report(df, args.output_md, args.top_n)
+        generate_markdown_report(df, args.output_md, args.top_n, 
+                               unified_table=args.unified_table,
+                               data_dir=args.data_dir)
     
     print("\nAnalysis complete!")
     print(f"Total theorems analyzed: {len(df)}")

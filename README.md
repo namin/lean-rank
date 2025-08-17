@@ -167,11 +167,21 @@ python -m src.tasks.compute_explicit_metrics
 # Generate markdown report for sharing
 python -m src.tasks.compute_explicit_metrics --top_n 50 --format markdown
 
+# Generate unified table format (all metrics in one table, sorted by combined score)
+python -m src.tasks.compute_explicit_metrics --unified-table --top_n 100
+
 # Force recomputation (ignore cache)
 python -m src.tasks.compute_explicit_metrics --force
 
 # Use different data directory
 python -m src.tasks.compute_explicit_metrics --data_dir data/number_theory_filtered
+
+# Full example: unified table with statements for top 50 theorems
+python -m src.tasks.compute_explicit_metrics \
+  --data_dir data/number_theory_filtered \
+  --unified-table \
+  --top_n 50 \
+  --output_md outputs/important_theorems.md
 ```
 
 This computes three explainable metrics:
